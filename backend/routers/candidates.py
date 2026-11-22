@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import or_, and_
 from sqlalchemy.orm import Session
 from backend.database import get_db
-from backend.models import CANDIDATE_STATUSES, DEFAULT_REQUIREMENT_STATUS, NOTICE_PERIOD_UNITS, Candidate, CandidateActivity, CandidateAssignment, CandidateComment, CandidateMatch, Position, RequirementCandidateStatus, User
+from backend.models import AVAILABILITY_STATUSES, CANDIDATE_STATUSES, DEFAULT_AVAILABILITY, DEFAULT_REQUIREMENT_STATUS, NOTICE_PERIOD_UNITS, Candidate, CandidateActivity, CandidateAssignment, CandidateComment, CandidateMatch, Position, RequirementCandidateStatus, User
 from backend.auth import get_current_user
 from backend.services.common.payloads import candidate_payload
 from backend.services.retrieval.opensearch import delete_candidate as delete_lexical
@@ -160,12 +160,12 @@ def update_candidate_status(id: str, req: CandidateStatusUpdateRequest, db: Sess
 
 @router.patch("/{id}/availability")
 def update_candidate_availability(id: str, req: CandidateAvailabilityUpdateRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if req.status not in ("Active", "Not Active"):
+    if req.status not in AVAILABILITY_STATUSES:
         raise HTTPException(status_code=400, detail="Availability must be Active or Not Active.")
     cand = db.query(Candidate).filter(Candidate.id == id).first()
     if not cand:
         raise HTTPException(status_code=404, detail="Candidate not found.")
-    previous = cand.availability_status or "Active"
+    previous = cand.availability_status or DEFAULT_AVAILABILITY
     cand.availability_status = req.status
     cand.availability_updated_by = user.id
     cand.availability_updated_at = datetime.utcnow()

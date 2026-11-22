@@ -6,6 +6,7 @@ import { MetaProvider } from './context/MetaContext';
 
 import Sidebar from './components/Sidebar';
 import Navbar from './components/Navbar';
+import ErrorBoundary from './components/ui/ErrorBoundary';
 
 const TruHireAssistant = lazy(() => import('./components/TruHireAssistant'));
 const AuthPage = lazy(() => import('./pages/AuthPage'));
@@ -15,12 +16,17 @@ const JobDescriptionsPage = lazy(() => import('./pages/JobDescriptionsPage'));
 const SearchPage = lazy(() => import('./pages/SearchPage'));
 const CandidateDetailPage = lazy(() => import('./pages/CandidateDetailPage'));
 const CandidateHistoryPage = lazy(() => import('./pages/CandidateHistoryPage'));
-const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
+const TrackerPage = lazy(() => import('./pages/TrackerPage'));
+const InterviewsPage = lazy(() => import('./pages/InterviewsPage'));
+const InsightsPage = lazy(() => import('./pages/InsightsPage'));
 const EmailPage = lazy(() => import('./pages/EmailPage'));
 const AIAuditPage = lazy(() => import('./pages/AIAuditPage'));
 import { isAdmin } from './lib/review';
-import { DEFAULT_ROUTE } from './lib/navigation';
+import { DEFAULT_ROUTE, PAGES, sectionPath } from './config/pages';
 import { STORAGE_KEYS } from './config/env';
+
+// Old paths of any page (bookmarks, links) redirect to where it lives now.
+const ALIASES = Object.values(PAGES).flatMap((page) => (page.aliases || []).map((alias) => [alias, page.path]));
 
 const SIDEBAR_PREF_KEY = STORAGE_KEYS.sidebarCollapsed;
 
@@ -67,7 +73,7 @@ function ProtectedLayout() {
 
   if (!isAuthenticated) {
     // Remember where the user was headed so login can return them there.
-    return <Navigate to="/login" replace state={{ from: { path: `${location.pathname}${location.search}` } }} />;
+    return <Navigate to={PAGES.login.path} replace state={{ from: { path: `${location.pathname}${location.search}` } }} />;
   }
 
   return (
@@ -77,7 +83,9 @@ function ProtectedLayout() {
         <Navbar />
         <div className="app-body">
           <div className="main-content">
-            <Suspense fallback={<div className="page-body" role="status">Loading…</div>}><Outlet /></Suspense>
+            <ErrorBoundary key={`${location.pathname}${location.search}`}>
+              <Suspense fallback={<div className="page-body" role="status">Loading…</div>}><Outlet /></Suspense>
+            </ErrorBoundary>
           </div>
         </div>
       </div>
@@ -93,21 +101,24 @@ export default function App() {
         <MetaProvider>
         <BrowserRouter>
           <Routes>
-            <Route path="/login" element={<Suspense fallback={null}><AuthPage /></Suspense>} />
+            <Route path={PAGES.login.path} element={<Suspense fallback={null}><AuthPage /></Suspense>} />
 
             <Route element={<ProtectedLayout />}>
               <Route path="/" element={<Navigate to={DEFAULT_ROUTE} replace />} />
-              <Route path="/ingestion" element={<IngestionPage />} />
-              <Route path="/ingestion/history" element={<IngestionHistoryPage />} />
-              <Route path="/requirements" element={<JobDescriptionsPage />} />
-              <Route path="/job-descriptions" element={<Navigate to="/requirements" replace />} />
-              <Route path="/positions" element={<Navigate to="/requirements" replace />} />
-              <Route path="/search" element={<SearchPage />} />
-              <Route path="/email" element={<EmailPage />} />
-              <Route path="/candidate-history" element={<CandidateHistoryPage />} />
-              <Route path="/candidates/:id" element={<CandidateDetailPage />} />
-              <Route path="/analytics" element={<AnalyticsPage />} />
-              <Route path="/ai-audit" element={<AdminOnly><AIAuditPage /></AdminOnly>} />
+              <Route path={PAGES.ingestion.path} element={<IngestionPage />} />
+              <Route path={PAGES.ingestionHistory.path} element={<IngestionHistoryPage />} />
+              <Route path={PAGES.requirements.path} element={<JobDescriptionsPage />} />
+              {ALIASES.map(([alias, path]) => <Route key={alias} path={alias} element={<Navigate to={path} replace />} />)}
+              <Route path={PAGES.search.path} element={<SearchPage />} />
+              <Route path={PAGES.email.path} element={<EmailPage />} />
+              <Route path={PAGES.candidateHistory.path} element={<CandidateHistoryPage />} />
+              <Route path={`${PAGES.candidate.path}/:id`} element={<CandidateDetailPage />} />
+              <Route path={PAGES.tracker.path} element={<TrackerPage />} />
+              <Route path={sectionPath('tracker', ':kind')} element={<TrackerPage />} />
+              <Route path={PAGES.interviews.path} element={<InterviewsPage />} />
+              <Route path={sectionPath('interviews', ':kind')} element={<InterviewsPage />} />
+              <Route path={PAGES.analytics.path} element={<InsightsPage />} />
+              <Route path={PAGES.aiAudit.path} element={<AdminOnly><AIAuditPage /></AdminOnly>} />
             </Route>
 
             <Route path="*" element={<Navigate to={DEFAULT_ROUTE} replace />} />

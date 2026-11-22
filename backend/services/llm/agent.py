@@ -20,12 +20,14 @@ from typing import Any, Dict, List, Optional, Tuple
 from fastapi import HTTPException
 from sqlalchemy.orm import Session, joinedload
 
-from backend.models import (INACTIVE_JD_STATUSES, LEGACY_JD_STATUS_ALIASES, REQUIREMENT_STATUSES, Candidate,
+from backend.models import (AVAILABILITY_STATUSES, INACTIVE_JD_STATUSES, LEGACY_JD_STATUS_ALIASES, REQUIREMENT_STATUSES, Candidate,
                             CandidateActivity, Conversation, ConversationMessage, Position, User)
 from backend.services.candidates.directory import filter_directory
 from backend.services.candidates.history import requirement_rows
 from backend.services.common import ai_audit
 from backend.services.common.payloads import candidate_payload
+from backend.config import settings
+from backend.services.llm import preflight
 from backend.services.llm.ai_service import untrusted
 from backend.services.llm.assistant_prompt import build_agent_prompt
 from backend.services.llm.router import chat_with_tools
@@ -39,7 +41,6 @@ MAX_ROUNDS = 5
 HISTORY_TURNS = 12
 MAX_RESULT_CHARS = 6000
 PENDING_TTL = timedelta(hours=1)
-AVAILABILITY = ("Active", "Not Active")
 
 
 class AgentUnavailable(Exception):
@@ -215,7 +216,7 @@ TOOLS: List[dict] = [
           f"Statuses: {', '.join(REQUIREMENT_STATUSES)}.", {"candidate": _STR, "demand": _STR, "status": {"type": "string", "enum": list(REQUIREMENT_STATUSES)}},
           ["candidate", "demand", "status"]),
     _tool("set_availability", "PROPOSE marking a candidate Active or Not Active. The user must confirm before it happens.",
-          {"candidate": _STR, "availability": {"type": "string", "enum": list(AVAILABILITY)}}, ["candidate", "availability"]),
+          {"candidate": _STR, "availability": {"type": "string", "enum": list(AVAILABILITY_STATUSES)}}, ["candidate", "availability"]),
     _tool("create_demand", "Start the guided demand-creation form. Pass `details` only when the user pasted a job description.",
           {"details": _STR}),
     _tool("draft_email", "Open the email drafts screen for one demand. Nothing is sent automatically.", {"demand": _STR}, ["demand"]),
@@ -346,7 +347,7 @@ def _t_set_availability(ctx, args) -> Outcome:
     cand, problem = _one_candidate(ctx.db, args.get("candidate"))
     if problem:
         return problem
-    wanted = next((s for s in AVAILABILITY if s.casefold() == str(args.get("availability") or "").strip().casefold()), None)
+    wanted = next((s for s in AVAILABILITY_STATUSES if s.casefold() == str(args.get("availability") or "").strip().casefold()), None)
     if not wanted:
         return Outcome({"error": "Availability must be Active or Not Active."})
     return _pending(ctx, "set_availability", {"candidate_id": cand.id, "availability": wanted},
@@ -370,7 +371,29 @@ def _t_draft_email(ctx, args) -> Outcome:
                    final=f"I selected {_demand_label(pos)}. Open Email to review demand-grounded drafts; nothing will be sent automatically.")
 
 
+def _x_update_requirement_status(db, user, a):
+    from backend.routers.job_descriptions import set_requirement_candidate_status
+
+    set_requirement_candidate_status(a["position_id"], a["candidate_id"], a["status"], db, user)
+
+
+def _x_set_availability(db, user, a):
+    from backend.routers.candidates import CandidateAvailabilityUpdateRequest, update_candidate_availability
+
+    update_candidate_availability(a["candidate_id"], CandidateAvailabilityUpdateRequest(status=a["availability"]), db, user)
+
+
 _IMPLEMENTATIONS = {name[3:]: fn for name, fn in list(globals().items()) if name.startswith("_t_")}
+EXECUTORS = {name[3:]: fn for name, fn in list(globals().items()) if name.startswith("_x_")}
+
+# The tools for the trackers, analytics, account, comments and edits live in app_tools.py, which needs the
+# helpers above, so it is imported last. Import this module (not app_tools) first.
+from backend.services.llm import app_tools  # noqa: E402
+
+TOOLS.extend(app_tools.TOOLS)
+WRITE_TOOLS |= app_tools.WRITE_TOOLS
+_IMPLEMENTATIONS.update(app_tools.IMPLEMENTATIONS)
+EXECUTORS.update(app_tools.EXECUTORS)
 
 
 # ----------------------------------------------------------------------------- the loop
@@ -422,7 +445,7 @@ def run_agent(db: Session, user: User, conversation: Conversation, message: str,
     reply = ""
     for _ in range(MAX_ROUNDS):
         try:
-            turn = chat_with_tools(messages, TOOLS)
+            turn = chat_with_tools(preflight.fit_context_budget(messages, settings.AGENT_CONTEXT_CHAR_BUDGET), TOOLS)
         except Exception as exc:
             raise AgentUnavailable(str(exc)) from exc
         calls = turn.get("tool_calls") or []
@@ -481,16 +504,10 @@ def resolve_pending(db: Session, user: User, conversation: Conversation, pending
         ai_audit.record(provider="agent", feature="assistant_action", status="rejected", details={"tool": tool, "args": args, "pending_id": pending_id})
         return "Okay, I did not make that change.", {"action": "action_rejected", "tool": tool}
     try:
-        if tool == "update_requirement_status":
-            from backend.routers.job_descriptions import set_requirement_candidate_status
-
-            set_requirement_candidate_status(args["position_id"], args["candidate_id"], args["status"], db, user)
-        elif tool == "set_availability":
-            from backend.routers.candidates import CandidateAvailabilityUpdateRequest, update_candidate_availability
-
-            update_candidate_availability(args["candidate_id"], CandidateAvailabilityUpdateRequest(status=args["availability"]), db, user)
-        else:
+        execute = EXECUTORS.get(tool)
+        if execute is None:
             raise HTTPException(400, "Unsupported action.")
+        execute(db, user, args)
     except HTTPException as exc:
         ai_audit.record(provider="agent", feature="assistant_action", status="error", error=str(exc.detail), details={"tool": tool, "args": args})
         return f"I could not do that: {exc.detail}", {"action": "action_failed", "tool": tool}

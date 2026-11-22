@@ -107,8 +107,8 @@ export default function JdCards({ jds, loading, scope = 'practice', practiceName
                 }}
               >
                 {/* Header: ID + Client Tag + Status */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                <div className="req-card-head">
+                  <div className="req-card-tags">
                     <span className="req-id-badge">{jd.display_id || 'DM-????'}</span>
                     {jd.client_name && (
                       <span className="req-client-chip">
@@ -126,21 +126,21 @@ export default function JdCards({ jds, loading, scope = 'practice', practiceName
                 <dl className="info-card-rows">
                   <div className="info-card-row">
                     <Fact label="Positions">
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-                        <Users size={12} color="var(--primary)" /> {formatPositions(jd.no_of_positions)}
+                      <span className="fact-inline">
+                        <Users size={12} className="fact-icon-primary" /> {formatPositions(jd.no_of_positions)}
                       </span>
                     </Fact>
                     <Fact label="Experience">
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-                        <Clock size={12} color="var(--text-muted)" /> {formatExperience(jd.experience_years, jd.experience_max_years)}
+                      <span className="fact-inline">
+                        <Clock size={12} className="fact-icon-muted" /> {formatExperience(jd.experience_years, jd.experience_max_years)}
                       </span>
                     </Fact>
                   </div>
 
                   <div className="info-card-row">
                     <Fact label="Locations">
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-                        <MapPin size={12} color="var(--text-muted)" /> {formatLocations(jd)}
+                      <span className="fact-inline">
+                        <MapPin size={12} className="fact-icon-muted" /> {formatLocations(jd)}
                       </span>
                     </Fact>
                     {practiceName && <Fact label="Practice">{practiceName(jd.demand_id) || '—'}</Fact>}

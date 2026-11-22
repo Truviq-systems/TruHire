@@ -24,10 +24,10 @@ export const TIMEOUTS_MS = Object.freeze({
 
 export const POLL_MS = Object.freeze({
   uploadProgress: 800,
+  metaRetry: 3_000,   // while the server cannot be reached (for example during a restart)
   ingestionHistory: 5_000,
 });
 
-export const DEFAULT_ROUTE = '/ingestion';
 
 // Result-size shortcuts offered in Search, together with the server's default and maximum (see /api/meta).
 export const TOP_N_PRESETS = Object.freeze([10, 50]);

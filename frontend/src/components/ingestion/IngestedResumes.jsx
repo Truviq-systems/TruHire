@@ -9,6 +9,7 @@ import { FRESHNESS_LABEL, formatIst, freshness } from '../../lib/ingestion';
 import NoticePeriodField from './NoticePeriodField';
 import './ingestion.css';
 
+import { candidatePath } from '../../config/pages';
 const PAGE = 20;
 
 // The signed-in user's ingested resumes (admins can switch to anyone's) with upload date, a recent/old marker and an editable notice period.
@@ -79,7 +80,7 @@ export default function IngestedResumes({ refreshKey }) {
               return (
                 <li key={c.id} className="ingested-row">
                   <div className="ingested-main">
-                    <Link className="ingested-name" to={`/candidates/${c.id}`} state={fromState(location, 'Ingestion')}>{c.candidate_name}</Link>
+                    <Link className="ingested-name" to={candidatePath(c.id)} state={fromState(location, 'Ingestion')}>{c.candidate_name}</Link>
                     <span className="slug ingested-file"><FileText size={12} aria-hidden="true" /> {c.original_filename}</span>
                   </div>
                   <div className="ingested-date">

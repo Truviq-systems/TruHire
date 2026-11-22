@@ -1,7 +1,8 @@
 // Shared navigation helpers so every page handles "Back" and post-login redirects the same way.
 import { useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { DEFAULT_ROUTE, STORAGE_KEYS } from '../config/env';
+import { STORAGE_KEYS } from '../config/env';
+import { DEFAULT_ROUTE, PAGES, pageForPath } from '../config/pages';
 
 export { DEFAULT_ROUTE };
 
@@ -12,7 +13,8 @@ export const HISTORY_QUERY_KEY = STORAGE_KEYS.ingestionHistoryQuery;
 // Only allow in-app paths as redirect targets (no protocol-relative or external URLs, no login loop).
 export function safeAppPath(path) {
   if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('//') || path.startsWith('/\\')) return null;
-  if (path === '/login' || path.startsWith('/login?') || path.startsWith('/login/')) return null;
+  const login = PAGES.login.path;
+  if (path === login || path.startsWith(`${login}?`) || path.startsWith(`${login}/`)) return null;
   return path;
 }
 
@@ -21,21 +23,8 @@ export function fromState(location, label) {
   return { from: { path: `${location.pathname}${location.search}`, label } };
 }
 
-// Helper to deduce a human-friendly label from a path
-export function labelFromPath(path) {
-  if (!path) return null;
-  if (path.startsWith('/candidate-history')) return 'Candidate History';
-  if (path.startsWith('/search')) return 'Search';
-  if (path.startsWith('/demands') || path.startsWith('/requirements') || path.startsWith('/job-descriptions') || path.startsWith('/positions')) return 'Requirements';
-  if (path.startsWith('/ingestion/history')) return 'Ingestion History';
-  if (path.startsWith('/ingestion')) return 'Ingestion';
-  if (path.startsWith('/email')) return 'Email';
-  if (path.startsWith('/analytics')) return 'Analytics';
-  if (path.startsWith('/ai-audit') || path.startsWith('/audit')) return 'AI Audit';
-  if (path.startsWith('/tracker')) return 'Requirement Tracker';
-  if (path.startsWith('/assistant')) return 'Assistant';
-  return null;
-}
+// The name of the page a path belongs to ("Back to Search"), or null. The names live in config/pages.js.
+export const labelFromPath = (path) => pageForPath(path)?.name ?? null;
 
 // Returns { goBack, backLabel }. When the user arrived through an in-app link that recorded
 // `from` or has session history, Back pops the browser history (so the previous page keeps its query/filters and the

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { resolveActiveCategory, nextCategoryId } from '../src/lib/categories.js';
+import { resolveActiveCategory } from '../src/lib/categories.js';
 import { canEditComment, assignmentControl, formatRelativeTime, assignmentsByCandidate } from '../src/lib/review.js';
 
 const run = (name, fn) => { try { fn(); console.log(`PASS ${name}`); } catch (e) { console.error(`FAIL ${name}\n`, e); process.exitCode = 1; } };
@@ -14,16 +14,6 @@ run('resolveActiveCategory returns null for an unknown or empty id', () => {
 
 run('resolveActiveCategory keeps a known id', () => {
   assert.equal(resolveActiveCategory(demands, 'pega'), 'pega');
-});
-
-run('category row keyboard: arrows move and wrap, Home/End jump', () => {
-  const ids = [null, 'java', 'pega'];
-  assert.equal(nextCategoryId(ids, null, 'ArrowRight'), 'java');
-  assert.equal(nextCategoryId(ids, 'pega', 'ArrowRight'), null);
-  assert.equal(nextCategoryId(ids, null, 'ArrowLeft'), 'pega');
-  assert.equal(nextCategoryId(ids, 'java', 'Home'), null);
-  assert.equal(nextCategoryId(ids, 'java', 'End'), 'pega');
-  assert.equal(nextCategoryId(ids, 'java', 'x'), 'java');
 });
 
 run('canEditComment: author or admin only', () => {

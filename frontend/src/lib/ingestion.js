@@ -55,3 +55,43 @@ export function noticePayload(rawValue, unit) {
   if (n * UNIT_DAYS[unit] > MAX_NOTICE_DAYS) return { error: 'Notice period cannot exceed 2 years.' };
   return { value: n, unit };
 }
+
+// What the live upload card shows, worked out from the batch row the server returns and the ingestion settings
+// from GET /api/meta (`config`). The stage names, the weight of each per-file state on the bar, which states count
+// as processed / duplicate / failed and how long a silent step may run all come from the server, so this names none.
+export function summarizeUpload(progress, config, now = Date.now()) {
+  const files = progress?.file_status || [];
+  const count = (statuses) => files.filter((f) => statuses.includes(f.status)).length;
+  const outcomes = config.file_outcomes;
+  const live = files.length > 0;
+  const weight = (file) => config.file_status_weights[file.status] ?? 0;
+  const settled = (progress?.processed_count || 0) + (progress?.duplicate_count || 0) + (progress?.failed_count || 0);
+  const seconds = (since) => {
+    const t = since ? asUtc(since).getTime() : NaN;
+    return Number.isNaN(t) ? null : Math.max(0, Math.floor((now - t) / 1000));
+  };
+  const finished = config.finished_batch_statuses.includes(progress?.status);
+  const sinceUpdate = seconds(progress?.updated_at || progress?.created_at);
+  return {
+    files,
+    pct: live
+      ? Math.round((files.reduce((sum, f) => sum + weight(f), 0) / files.length) * 100)
+      : (progress?.total_files > 0 ? Math.min(100, Math.round((settled / progress.total_files) * 100)) : 0),
+    processed: live ? count(outcomes.processed) : progress?.processed_count ?? 0,
+    duplicates: live ? count(outcomes.duplicates) : progress?.duplicate_count ?? 0,
+    failed: live ? count(outcomes.failed) : progress?.failed_count ?? 0,
+    stageIndex: Math.max(0, config.stages.findIndex((s) => s.key === progress?.stage)),
+    finished,
+    elapsedSeconds: seconds(progress?.created_at),
+    secondsSinceUpdate: sinceUpdate,
+    // A running step that has not reported for longer than the server's limit: say it is still working.
+    slow: !finished && config.slow_after_seconds > 0 && sinceUpdate !== null && sinceUpdate >= config.slow_after_seconds,
+  };
+}
+
+// "1m 05s" / "18s" for a whole number of seconds.
+export const formatSeconds = (total) => {
+  if (total === null || total === undefined) return '';
+  const minutes = Math.floor(total / 60);
+  return minutes ? `${minutes}m ${String(total % 60).padStart(2, '0')}s` : `${total}s`;
+};

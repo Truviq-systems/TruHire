@@ -10,6 +10,7 @@ import CommentThread from '../review/CommentThread';
 import { EmailStatusBadge } from '../EmailComposer';
 import './requirements.css';
 
+import { candidatePath } from '../../config/pages';
 // Skills as small chips, capped so a row stays one glance tall.
 function Chips({ label, skills, tone, max = 6 }) {
   if (!skills.length) return null;
@@ -36,7 +37,7 @@ export default function MatchRow({ item, positionId, assignment, users, onStatus
   const gaps = item.score_breakdown?.missing_skills || [];
   const coverage = skillCoverage(item.score_breakdown);
   const status = item.requirement_status || defaultStatus;
-  const openCandidate = () => navigate(`/candidates/${cand.id}`, { state: fromState(location, 'Requirements') });
+  const openCandidate = () => navigate(candidatePath(cand.id), { state: fromState(location, 'Requirements') });
 
   return (
     <li className="match">
@@ -47,7 +48,7 @@ export default function MatchRow({ item, positionId, assignment, users, onStatus
 
       <div className="match-body match-body-link" onClick={openCandidate}>
         <div className="cluster cluster-tight">
-          <Link className="match-name" to={`/candidates/${cand.id}`} state={fromState(location, 'Requirements')} onClick={(e) => e.stopPropagation()}>{cand.candidate_name}</Link>
+          <Link className="match-name" to={candidatePath(cand.id)} state={fromState(location, 'Requirements')} onClick={(e) => e.stopPropagation()}>{cand.candidate_name}</Link>
           <span className="slug">{cand.display_id || 'TRU-CN-????'} · {cand.years_experience} yrs</span>
           {item.last_email && <EmailStatusBadge status={item.last_email.status} />}
         </div>

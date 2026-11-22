@@ -59,6 +59,7 @@ JD_STATUSES = ("Open", "Cancelled", "Fulfilled", "Mapped")  # lifecycle of a JD 
 # "Map" was renamed and "Closed" was removed (those demands are Cancelled); old rows and clients are still understood.
 LEGACY_JD_STATUS_ALIASES = {"Map": "Mapped", "Closed": "Cancelled"}
 INACTIVE_JD_STATUSES = ("Cancelled",)  # kept on record but not counted on demand folders
+FULFILLED_JD_STATUSES = ("Fulfilled",)  # the demand's positions are filled: reports count them as done
 RESUME_LINKED_JD_STATUSES = ("Mapped", "Fulfilled")  # statuses that name the resume(s) the demand was filled with
 MAX_CANCELLATION_REASON_CHARS = 1000
 CLIENT_NAMES = ("Cretera", "Infosys", "Coforge", "Aaseya", "NTT Data", "Utsuk")  # the clients a demand can belong to
@@ -121,6 +122,8 @@ class IngestionBatch(Base):
     file_status = Column(JSON, default=list)
     # Set by POST /batches/{id}/cancel; process_batch checks it between files and before indexing.
     cancel_requested = Column(Boolean, default=False, nullable=False, server_default="false")
+    # Heartbeat: written on every progress update. A processing batch that stops updating belongs to a dead task.
+    updated_at = Column(DateTime, nullable=True)
     creator = relationship("User", back_populates="batches")
     candidates = relationship("Candidate", back_populates="batch")
 
@@ -255,6 +258,25 @@ class AssistantDemandSession(Base):
 
 CANDIDATE_STATUSES = ("New", "Shortlisted", "Interviewed", "Rejected")
 REQUIREMENT_STATUSES = ("New", "Mapped", "Shortlisted", "Interviewed", "Rejected")  # per-requirement review stages
+PROGRESSED_REQUIREMENT_STATUSES = ("Shortlisted", "Interviewed")  # stages that mean a candidate is moving forward (reports)
+AVAILABILITY_STATUSES = ("Active", "Not Active")  # a candidate's global availability, independent of any requirement
+DEFAULT_AVAILABILITY = AVAILABILITY_STATUSES[0]
+# The Interviews section: (key, title, description). The workflow behind each is defined later.
+INTERVIEW_KINDS = (
+    ("internal", "Internal Interview", "Interviews held by the TruHire panel before a candidate is submitted."),
+    ("client", "Client Interview", "Interviews held by the client after a submission."),
+)
+# Ingestion progress: the overall stages, and each file's pipeline state with its weight (0-1) on the progress bar.
+INGEST_STAGES = (("reading", "Reading & AI analysis"), ("embedding", "Embedding"), ("indexing", "Indexing"), ("done", "Done"))
+INGEST_FILE_STATUS_WEIGHTS = {"queued": 0, "extracting": 0.15, "analyzing": 0.4, "parsed": 0.55, "embedding": 0.7, "indexing": 0.85,
+                              "indexed": 1, "updated": 1, "duplicate": 1, "skipped": 1, "failed": 1}
+INGEST_FINAL_FILE_STATUSES = tuple(k for k, w in INGEST_FILE_STATUS_WEIGHTS.items() if w == 1)
+INGEST_FINISHED_BATCH_STATUSES = ("completed", "failed", "cancelled")
+# Which per-file states the progress card counts as processed, duplicate or failed.
+INGEST_FILE_OUTCOMES = {"processed": ("indexed", "updated"), "duplicates": ("duplicate",), "failed": ("failed",)}
+# Demand details a recruiter may edit (PositionUpdateRequest, the assistant's update_demand tool).
+DEMAND_DETAIL_FIELDS = ("role", "location", "locations", "no_of_positions", "client_name", "demand_owner", "current_status",
+                        "experience_years", "experience_max_years", "start_date", "end_date")
 DEFAULT_REQUIREMENT_STATUS = "New"
 
 
@@ -268,6 +290,23 @@ class RequirementCandidateStatus(Base):
     updated_by = Column(String, nullable=True)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     __table_args__ = (UniqueConstraint("position_id", "candidate_id", name="uq_requirement_candidate_status"),)
+
+
+class TrackerEntry(Base):
+    """One row of the Pipeline or Submission tracker. `stage` is the table the row sits in
+    (pipeline stage, or the submission's client status); `data` holds the column values keyed
+    by the column list in routers/tracker.py, so adding a column needs no migration."""
+    # Not "tracker_entries": databases created by an earlier version already hold a table of that name
+    # with a different shape (position_id/candidate_id required), which must be left untouched.
+    __tablename__ = "tracker_rows"
+    id = Column(String, primary_key=True, default=generate_uuid)
+    tracker = Column(String, nullable=False, index=True)  # "pipeline" | "submission"
+    stage = Column(String, nullable=False, index=True)
+    candidate_id = Column(String, ForeignKey("candidates.id", ondelete="SET NULL"), nullable=True, index=True)
+    data = Column(JSON, nullable=False, default=dict)
+    created_by = Column(String, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 
 class CandidateAssignment(Base):

@@ -6,6 +6,7 @@ import { formatDate, formatExperience, formatLocations, formatPositions } from '
 import { fromState } from '../../lib/navigation';
 import './requirements.css';
 
+import { candidatePath, searchPath } from '../../config/pages';
 export default function RequirementDrawer({ jd, matches = [], loading = false, onClose, onEmail, onOpenFull }) {
   const location = useLocation();
   const [activeTab, setActiveTab] = useState('matches');
@@ -77,7 +78,7 @@ export default function RequirementDrawer({ jd, matches = [], loading = false, o
             ) : matches.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '2rem 0', color: 'var(--text-muted)' }}>
                 <p>No candidates matched this requirement yet.</p>
-                <Link to={`/search?jdId=${jd.id}`} className="btn btn-secondary btn-compact" style={{ marginTop: '0.75rem' }}>
+                <Link to={searchPath({ jdId: jd.id })} className="btn btn-secondary btn-compact" style={{ marginTop: '0.75rem' }}>
                   Open Candidate Search
                 </Link>
               </div>
@@ -94,7 +95,7 @@ export default function RequirementDrawer({ jd, matches = [], loading = false, o
                         <div className="drawer-candidate-body">
                           <div className="drawer-candidate-headline">
                             <Link
-                              to={`/candidates/${cand.id}`}
+                              to={candidatePath(cand.id)}
                               state={fromState(location, 'Requirements')}
                               className="drawer-candidate-name"
                               style={{ textDecoration: 'none', color: 'inherit' }}
@@ -123,7 +124,7 @@ export default function RequirementDrawer({ jd, matches = [], loading = false, o
                   })}
                 </ol>
                 <div className="drawer-footer-row">
-                  <Link to={`/search?jdId=${jd.id}`} className="drawer-view-all-link">
+                  <Link to={searchPath({ jdId: jd.id })} className="drawer-view-all-link">
                     View all {matches.length} matches <ArrowRight size={13} />
                   </Link>
                 </div>

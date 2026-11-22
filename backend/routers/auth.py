@@ -1,7 +1,7 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-from pydantic import BaseModel, EmailStr, ConfigDict
+from pydantic import BaseModel, EmailStr, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
 from backend.config import settings
@@ -30,6 +30,18 @@ class UserResponse(BaseModel):
     email: str
     name: str
     role: Optional[str] = ROLE_RECRUITER
+
+
+class UserNameRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+    @field_validator("name")
+    @classmethod
+    def _tidy(cls, value: str) -> str:
+        value = " ".join(value.split())
+        if not value:
+            raise ValueError("The name cannot be blank.")
+        return value
 
 
 class TokenResponse(BaseModel):
@@ -106,4 +118,13 @@ async def login(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/me", response_model=UserResponse)
 def get_me(current_user: User = Depends(get_current_user)):
+    return current_user
+
+
+@router.patch("/me", response_model=UserResponse)
+def update_me(req: UserNameRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """The signed-in user changes their own display name."""
+    current_user.name = req.name
+    db.commit()
+    db.refresh(current_user)
     return current_user

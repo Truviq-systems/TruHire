@@ -8,6 +8,7 @@ import { POLL_MS } from '../config/env';
 import { formatIst } from '../lib/ingestion';
 import { useMeta } from '../context/MetaContext';
 
+import { candidatePath } from '../config/pages';
 const WINDOWS = [
   { label: '10 min', minutes: 10 },
   { label: '1 hour', minutes: 60 },
@@ -228,7 +229,7 @@ export default function IngestionHistoryPage() {
                     </td>
                     <td style={{ padding: '0.7rem 1rem' }}>
                       {row.candidate_id ? (
-                        <Link to={`/candidates/${row.candidate_id}`} state={fromState(location, 'Ingestion History')} style={{ color: 'var(--primary)', fontWeight: 600, textDecoration: 'none' }}>
+                        <Link to={candidatePath(row.candidate_id)} state={fromState(location, 'Ingestion History')} style={{ color: 'var(--primary)', fontWeight: 600, textDecoration: 'none' }}>
                           {row.candidate_name}
                           <span style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-subtle)', fontWeight: 500 }}>{row.display_id}</span>
                         </Link>

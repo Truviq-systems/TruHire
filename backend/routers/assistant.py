@@ -6,11 +6,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from backend.auth import get_current_user
-from backend.database import get_db
+from backend.database import SessionLocal, get_db
 from backend.models import INACTIVE_JD_STATUSES, LEGACY_JD_STATUS_ALIASES, Candidate, Conversation, ConversationMessage, Position, User
 from backend.routers import assistant_demand
 from backend.services.common.demand_fields import parse_lenient_date
@@ -24,6 +25,7 @@ from backend.services.llm import agent
 from backend.services.llm.assistant_context import build_data_context
 from backend.services.llm.assistant_prompt import build_system_prompt
 from backend.services.llm.router import chat_completion, chat_completion_stream
+from backend.services.llm import preflight
 from backend.services.llm.scope import GREETING_REPLY, REFUSAL, is_greeting, is_in_scope
 from backend.services.common import ai_audit
 from backend.services.retrieval.search import execute_candidate_search
@@ -42,6 +44,14 @@ class AssistantMessageRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=12000)
     conversation_id: Optional[str] = None
     position_id: Optional[str] = None
+
+    @field_validator("message")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Type a message first.")
+        return value
 
 
 def _conversation(db: Session, user: User, conversation_id: Optional[str]) -> Conversation:
@@ -653,15 +663,48 @@ def _deterministic(db: Session, request: AssistantMessageRequest, user: User, co
     return routed
 
 
+def _prior_user_turns(db: Session, conversation: Conversation) -> int:
+    """User messages that came before the one being answered. Counted in the database after a flush:
+    the session does not autoflush, so the new message is not in `conversation.messages` yet."""
+    db.flush()
+    saved = db.query(func.count(ConversationMessage.id)).filter(
+        ConversationMessage.conversation_id == conversation.id, ConversationMessage.role == "user").scalar()
+    return max(0, saved - 1)
+
+
+def _preflight_route(db: Session, request: AssistantMessageRequest) -> Optional[tuple]:
+    """Exact, confident intents answered by code before any model call: a bare greeting and the saved
+    position / demand counts (each returns None when the wording is ambiguous, leaving it to the agent).
+    The fuzzy keyword handlers in `_deterministic` stay a fallback for when no model is available."""
+    if is_greeting(request.message):
+        return GREETING_REPLY, {"action": "reply"}
+    return _open_positions_action(db, request.message) or _demand_count_action(db, request.message)
+
+
 def _agent_answer(db: Session, request: AssistantMessageRequest, user: User, conversation: Conversation) -> Optional[tuple]:
-    """(reply, ui) from the tool-calling agent, or None when it is unavailable."""
+    """(reply, ui) from the tool-calling agent, or None when it is unavailable. Runs the rest of the
+    pre-flight first: replay a cached standalone answer, then the per-user rate gate, then the model."""
     if _field_request(request.message):  # a JD-upload field report needs the uploaded draft, which only the handler can see
         return None
+    prior_user_turns = _prior_user_turns(db, conversation)
+    if prior_user_turns == 0:
+        hit = preflight.cached_answer(user.id, request.message, request.position_id)
+        if hit:
+            logger.info("assistant route=cache")
+            return hit
+    allowed, wait = preflight.allow_inference(user.id)
+    if not allowed:
+        raise HTTPException(429, f"You are sending messages faster than I can answer. Try again in {wait:g} seconds.",
+                            headers={"Retry-After": str(max(1, int(wait)))})
     try:
-        return agent.run_agent(db, user, conversation, request.message, request.position_id)
+        reply, ui = agent.run_agent(db, user, conversation, request.message, request.position_id)
     except agent.AgentUnavailable as exc:
         logger.info("Agent unavailable, using deterministic handlers: %s", str(exc).splitlines()[0][:200])
         return None
+    logger.info("assistant route=agent")
+    if preflight.cacheable(request.message, prior_user_turns, reply, ui):
+        preflight.remember_answer(user.id, request.message, request.position_id, reply, ui)
+    return reply, ui
 
 
 def _finish(db: Session, conversation: Conversation, reply: str, data: dict) -> dict:
@@ -681,7 +724,10 @@ def assistant_message(
     _save_message(db, conversation, "user", request.message)
     if _out_of_scope(request, conversation):
         return _finish(db, conversation, REFUSAL, {"action": "reply"})
-    routed = _agent_answer(db, request, user, conversation) or _deterministic(db, request, user, conversation)
+    routed = _preflight_route(db, request)
+    if routed:
+        logger.info("assistant route=code")
+    routed = routed or _agent_answer(db, request, user, conversation) or _deterministic(db, request, user, conversation)
     if routed is None:
         routed = (_generic_reply(db, request, conversation), {"action": "reply"})
     return _finish(db, conversation, *routed)
@@ -723,7 +769,10 @@ def assistant_message_stream(
     if _out_of_scope(request, conversation):
         done = _finish(db, conversation, REFUSAL, {"action": "reply"})
         return StreamingResponse(iter([_sse("done", done)]), media_type="text/event-stream")
-    answered = _agent_answer(db, request, user, conversation)
+    answered = _preflight_route(db, request)
+    if answered:
+        logger.info("assistant route=code")
+    answered = answered or _agent_answer(db, request, user, conversation)
     if answered is not None:  # the agent works in tool rounds, so its answer arrives as one piece
         done = _finish(db, conversation, *answered)
         return StreamingResponse(iter([_sse("token", {"text": done["reply"]}), _sse("done", done)]), media_type="text/event-stream")

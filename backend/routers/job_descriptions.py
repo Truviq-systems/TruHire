@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from backend.database import get_db
 from backend.services.common.payloads import candidate_payload
 from backend.models import (
-    Position, User, DEFAULT_DEMAND_NAMES, canonical_demand_id, Candidate, CandidateActivity, CandidateMatch, SearchState, Conversation, ConversationMessage, EmailRecord,
+    Position, User, DEMAND_DETAIL_FIELDS, DEFAULT_DEMAND_NAMES, canonical_demand_id, Candidate, CandidateActivity, CandidateMatch, SearchState, Conversation, ConversationMessage, EmailRecord,
     CandidateAssignment, CandidateComment, RequirementCandidateStatus, REQUIREMENT_STATUSES, DEFAULT_REQUIREMENT_STATUS, get_next_position_display_id,
     JD_STATUSES, LEGACY_JD_STATUS_ALIASES, DEFAULT_JD_STATUS, CLIENT_NAMES, RESUME_LINKED_JD_STATUSES, MAX_CANCELLATION_REASON_CHARS, HISTORY_ACTIONS, HISTORY_CREATED, HISTORY_UPDATED, HISTORY_DELETED, HISTORY_STATUS_CHANGED, RequirementHistory,
 )
@@ -536,7 +536,7 @@ def update_jd(jd_id: str, req: PositionUpdateRequest, db: Session, user: Optiona
         pos.original_filename = req.original_filename
         changed = True
     # Detail fields: a field the client sent (even as null) is applied, so a value can be cleared.
-    for field in ("role", "location", "locations", "no_of_positions", "client_name", "demand_owner", "current_status", "experience_years", "experience_max_years", "start_date", "end_date"):
+    for field in DEMAND_DETAIL_FIELDS:
         if field not in req.model_fields_set:
             continue
         value = getattr(req, field)

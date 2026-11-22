@@ -1,25 +1,22 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { UploadCloud, FileText, Search, BarChart3, Mail, ShieldCheck, Users, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { UploadCloud, FileText, Search, BarChart3, Mail, ShieldCheck, Users, ClipboardList, CalendarClock, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { isAdmin } from '../lib/review';
+import { MENU_PAGES } from '../config/pages';
 import Logo from './Logo';
 
-// Ingestion History lives inside the Ingestion section (/ingestion/history), so "Ingestion"
-// matches its sub-routes (end: false) and stays highlighted there.
-const NAV_ITEMS = [
-  { name: 'Ingestion', path: '/ingestion', icon: UploadCloud, end: false },
-  { name: 'Requirements', path: '/requirements', icon: FileText, end: true },
-  { name: 'Search', path: '/search', icon: Search, end: true },
-  { name: 'Candidate History', path: '/candidate-history', icon: Users, end: true },
-  { name: 'Email', path: '/email', icon: Mail, end: true },
-  { name: 'Analytics', path: '/analytics', icon: BarChart3, end: true },
-  { name: 'AI Audit', path: '/ai-audit', icon: ShieldCheck, end: true, adminOnly: true },
-];
+// The menu entries (name, path, which are sections with sub-pages, who may see them) come from config/pages.js.
+// Only the drawing of each icon is decided here.
+// A section (Tracker, Interviews) stays highlighted on its sub-pages, so only plain pages match exactly.
+const ICONS = {
+  ingestion: UploadCloud, requirements: FileText, search: Search, candidateHistory: Users, tracker: ClipboardList,
+  interviews: CalendarClock, email: Mail, analytics: BarChart3, aiAudit: ShieldCheck,
+};
 
 export default function Sidebar({ collapsed = false, onToggle }) {
   const { user } = useAuth();
-  const items = NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin(user));
+  const items = MENU_PAGES.filter((item) => !item.adminOnly || isAdmin(user));
   return (
     <aside
       id="app-sidebar"
@@ -42,12 +39,12 @@ export default function Sidebar({ collapsed = false, onToggle }) {
       </div>
       <nav className="sidebar-nav">
         {items.map((item) => {
-          const Icon = item.icon;
+          const Icon = ICONS[item.key];
           return (
             <NavLink
               key={item.path}
               to={item.path}
-              end={item.end}
+              end={!item.section}
               aria-label={item.name}
               data-tooltip={item.name}
               className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}

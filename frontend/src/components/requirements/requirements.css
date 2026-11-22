@@ -84,16 +84,16 @@
 .card.info-card {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
   width: 100%;
-  padding: var(--space-4);
+  padding: var(--space-5);
   text-align: left;
   font: inherit;
   color: inherit;
   cursor: pointer;
 }
 .info-card:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-.info-card-title { display: flex; align-items: center; gap: var(--space-2); font-family: var(--font-serif); font-size: 1.125rem; font-weight: 700; line-height: 1.3; letter-spacing: -0.005em; color: var(--text-main); }
+.info-card-title { display: flex; align-items: center; gap: var(--space-2); font-family: var(--font-serif); font-size: 1.25rem; font-weight: 700; line-height: 1.3; letter-spacing: -0.005em; color: var(--text-main); }
 .info-card-facts { display: flex; flex-direction: column; gap: var(--space-2); font-size: 0.875rem; }
 .info-card-facts > div { display: flex; justify-content: space-between; gap: var(--space-3); }
 .info-card-facts dt { color: var(--text-muted); font-weight: 500; }
@@ -109,11 +109,11 @@
   font-family: var(--font-mono);
   font-size: 0.6875rem;
   font-weight: 700;
-  padding: 0.15rem 0.45rem;
+  padding: 0.15rem 0.6rem;
   background: var(--bg-subtle);
   color: var(--text-muted);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-full);
   letter-spacing: 0.02em;
 }
 
@@ -123,17 +123,16 @@
   gap: 0.25rem;
   font-size: 0.6875rem;
   font-weight: 600;
-  padding: 0.15rem 0.45rem;
+  padding: 0.15rem 0.6rem;
   background: var(--primary-light);
   color: var(--primary);
   border: 1px solid var(--primary-border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-full);
 }
 
 .req-card-footer {
   margin-top: auto;
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border-color);
+  padding-top: var(--space-2);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -146,6 +145,9 @@
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--primary);
+  padding: 0.3rem 0.8rem;
+  background: var(--primary-light);
+  border-radius: var(--radius-full);
   transition: gap 0.15s ease;
 }
 .info-card:hover .req-view-link {
@@ -339,7 +341,7 @@
 .req-tab[aria-selected='true'] { color: var(--on-primary); background: var(--primary); font-weight: 600; }
 .req-tab:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .req-tab-count { min-width: 1.4rem; padding: 0 var(--space-2); border-radius: 999px; background: var(--bg-surface); color: var(--text-main); font-family: var(--font-mono); font-size: var(--text-xs); text-align: center; }
-.req-tab[aria-selected='true'] .req-tab-count { background: rgba(255, 255, 255, .22); color: inherit; }
+.req-tab[aria-selected='true'] .req-tab-count { background: color-mix(in srgb, var(--on-primary) 22%, transparent); color: inherit; }
 @media (prefers-reduced-motion: reduce) { .req-tab { transition: none; } }
 
 /* Slide-over Drawer & Requirements Grid Layout (Image 1 style) */
@@ -360,7 +362,7 @@
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-card);
   padding: 1.25rem;
   display: flex;
   flex-direction: column;
@@ -505,17 +507,10 @@
   font-weight: 700;
   padding: 0.15rem 0.5rem;
   border-radius: var(--radius-full);
-  color: #ffffff;
 }
-.drawer-score-pill.score-high {
-  background: #10B981;
-}
-.drawer-score-pill.score-mid {
-  background: #F59E0B;
-}
-.drawer-score-pill.score-low {
-  background: #94A3B8;
-}
+.drawer-score-pill.score-high { background: var(--success-bg); color: var(--success-text); }
+.drawer-score-pill.score-mid { background: var(--warning-bg); color: var(--warning-text); }
+.drawer-score-pill.score-low { background: var(--bg-subtle); color: var(--text-muted); }
 .drawer-candidate-subline {
   display: flex;
   align-items: center;
@@ -636,3 +631,10 @@
   background: var(--primary);
   border-radius: 3px 3px 0 0;
 }
+
+/* Requirement card header and inline facts (JdCards). */
+.req-card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-1); }
+.req-card-tags { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; }
+.fact-inline { display: inline-flex; align-items: center; gap: var(--space-1); }
+.fact-icon-primary { color: var(--primary); }
+.fact-icon-muted { color: var(--text-muted); }

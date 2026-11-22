@@ -29,3 +29,44 @@ assert.equal(formatIst(null), '—');
 assert.equal(formatIst('garbage'), '—');
 
 console.log('ingestion tests passed');
+
+// ── Live upload card: everything it shows comes from the server's settings ─────────────────────────
+import { summarizeUpload, formatSeconds } from '../src/lib/ingestion.js';
+const run = (name, fn) => { try { fn(); console.log(`PASS ${name}`); } catch (e) { console.error(`FAIL ${name}
+`, e); process.exitCode = 1; } };
+
+const cfg = {
+  stages: [{ key: 'one', label: 'One' }, { key: 'two', label: 'Two' }, { key: 'end', label: 'End' }],
+  file_status_weights: { waiting: 0, busy: 0.5, ok: 1, dup: 1, bad: 1 },
+  file_outcomes: { processed: ['ok'], duplicates: ['dup'], failed: ['bad'] },
+  finished_batch_statuses: ['over'], slow_after_seconds: 20,
+};
+const T0 = Date.parse('2026-11-22T10:00:00Z');
+const batch = (o) => ({ status: 'running', stage: 'one', created_at: '2026-11-22T10:00:00', updated_at: '2026-11-22T10:00:05', total_files: 2,
+  file_status: [{ filename: 'a', status: 'busy' }, { filename: 'b', status: 'waiting' }], ...o });
+
+run('upload progress weighs each file by the server weights and counts outcomes by the server lists', () => {
+  const s = summarizeUpload(batch({ file_status: [{ status: 'ok' }, { status: 'dup' }, { status: 'bad' }, { status: 'busy' }] }), cfg, T0 + 6000);
+  assert.deepEqual([s.pct, s.processed, s.duplicates, s.failed], [88, 1, 1, 1]);   // (1+1+1+0.5)/4
+});
+
+run('upload progress without per-file rows falls back to the batch counters', () => {
+  const s = summarizeUpload({ status: 'running', total_files: 4, processed_count: 1, duplicate_count: 1, failed_count: 0, file_status: [] }, cfg, T0);
+  assert.deepEqual([s.pct, s.processed, s.duplicates], [50, 1, 1]);
+  assert.equal(summarizeUpload(null, cfg, T0).pct, 0);
+});
+
+run('upload progress knows the stage, whether it finished, and says a silent step is slow only past the server limit', () => {
+  assert.equal(summarizeUpload(batch({ stage: 'two' }), cfg, T0 + 6000).stageIndex, 2 - 1);
+  assert.equal(summarizeUpload(batch({ stage: 'nope' }), cfg, T0 + 6000).stageIndex, 0);
+  const quiet = summarizeUpload(batch(), cfg, T0 + 5000 + 19_000);
+  const stuck = summarizeUpload(batch(), cfg, T0 + 5000 + 20_000);
+  assert.deepEqual([quiet.slow, stuck.slow, stuck.secondsSinceUpdate, stuck.elapsedSeconds], [false, true, 20, 25]);
+  assert.equal(summarizeUpload(batch({ status: 'over' }), cfg, T0 + 999_000).slow, false);   // a finished batch is never "slow"
+  assert.equal(summarizeUpload(batch({ status: 'over' }), cfg, T0).finished, true);
+  assert.equal(summarizeUpload(batch(), { ...cfg, slow_after_seconds: 0 }, T0 + 999_000).slow, false);  // setting not loaded: no guess
+});
+
+run('formatSeconds reads as seconds, then minutes', () => {
+  assert.deepEqual([formatSeconds(18), formatSeconds(65), formatSeconds(120), formatSeconds(null)], ['18s', '1m 05s', '2m 00s', '']);
+});

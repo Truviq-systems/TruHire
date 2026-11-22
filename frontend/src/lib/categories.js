@@ -4,16 +4,6 @@
 export const resolveActiveCategory = (demands, requestedId) =>
   (requestedId && (demands || []).some((d) => d.id === requestedId) ? requestedId : null);
 
-// Roving selection for the category tab row. `ids` is the visible order (null = All); returns the id to select.
-export function nextCategoryId(ids, current, key) {
-  const at = Math.max(0, ids.indexOf(current));
-  if (key === 'ArrowRight' || key === 'ArrowDown') return ids[(at + 1) % ids.length];
-  if (key === 'ArrowLeft' || key === 'ArrowUp') return ids[(at - 1 + ids.length) % ids.length];
-  if (key === 'Home') return ids[0];
-  if (key === 'End') return ids[ids.length - 1];
-  return current;
-}
-
 // JDs shown in the JD selector: only those assigned to the chosen category (all when none is chosen).
 export const jdsInCategory = (jds, categoryId) => (categoryId ? jds.filter((j) => j.demand_id === categoryId) : jds);
 

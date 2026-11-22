@@ -1,18 +1,24 @@
 from collections import Counter
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
+from sqlalchemy import func
+from sqlalchemy.orm import Session, joinedload
 
 from backend.config import settings
 from backend.database import get_db
-from backend.models import CANDIDATE_STATUSES, Candidate, Position, CandidateMatch, IngestionBatch, User
+from backend.models import (CANDIDATE_STATUSES, LEGACY_JD_STATUS_ALIASES, REQUIREMENT_STATUSES, Candidate, CandidateMatch, IngestionBatch, Position,
+                            RequirementCandidateStatus, User)
 from backend.auth import get_current_user
 from backend.services.common.cache import get_cache, set_cache, get_data_epoch
 
-router = APIRouter(prefix="/api/analytics", tags=["analytics"])
+router = APIRouter(tags=["insights"])
+# The page is served under /api/insights: content blockers refuse URLs that contain the word "analytics", which
+# blanked the page. The old /api/analytics paths stay (hidden from the docs) so a frontend built before the
+# change keeps working until it is redeployed.
 
 
-@router.get("/overview")
+@router.get("/api/insights/overview")
+@router.get("/api/analytics/overview", include_in_schema=False)
 def get_analytics_overview(
     position_id: Optional[str] = Query(None, description="Optional JD ID to filter match score distribution"),
     db: Session = Depends(get_db),
@@ -137,3 +143,29 @@ def _compute_overview(position_id: Optional[str], db: Session) -> Dict[str, Any]
         "ingestion_timeline": ingestion_timeline,
         "filtered_by_position_id": position_id
     }
+
+
+@router.get("/api/insights/requirements")
+@router.get("/api/analytics/requirements", include_in_schema=False)
+def get_requirements_report(db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> Dict[str, Any]:
+    """One row per requirement for the Analytics report: lifecycle, positions, age and how many candidates
+    sit at each review stage. The page filters and totals these rows itself, so the numbers on screen always
+    add up to the table underneath."""
+    stage_counts: Dict[str, Dict[str, int]] = {}
+    for position_id, status, count in (db.query(RequirementCandidateStatus.position_id, RequirementCandidateStatus.status, func.count())
+                                       .group_by(RequirementCandidateStatus.position_id, RequirementCandidateStatus.status).all()):
+        stage_counts.setdefault(position_id, {})[status] = count
+    rows = []
+    for pos in db.query(Position).options(joinedload(Position.demand)).order_by(Position.created_at.desc()).all():
+        counts = stage_counts.get(pos.id, {})
+        rows.append({
+            "id": pos.id, "display_id": pos.display_id, "title": pos.title, "client_name": pos.client_name,
+            "practice": pos.demand.name if pos.demand else None,
+            "status": LEGACY_JD_STATUS_ALIASES.get(pos.status or "Open", pos.status or "Open"),
+            "no_of_positions": pos.no_of_positions or 1,
+            "created_at": pos.created_at.isoformat() if pos.created_at else None,
+            # Last modification: the closest recorded moment a demand became Fulfilled or Cancelled.
+            "updated_at": pos.updated_at.isoformat() if pos.updated_at else None,
+            "stages": {status: counts.get(status, 0) for status in REQUIREMENT_STATUSES},
+        })
+    return {"requirements": rows, "stages": list(REQUIREMENT_STATUSES)}

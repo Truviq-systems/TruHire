@@ -1,13 +1,15 @@
 import { useId, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { ChevronDown, ChevronUp, FileText, MapPin, Briefcase, Award, CheckCircle, AlertCircle } from 'lucide-react';
+import { ChevronDown, ChevronUp, FileText, MapPin, Briefcase } from 'lucide-react';
 import { fromState } from '../../lib/navigation';
 import { explainScore, skillComparison } from '../../lib/scoreExplanation';
 import { useMeta } from '../../context/MetaContext';
 
+import { candidatePath } from '../../config/pages';
+const RING_COLOR = { high: 'var(--success)', mid: 'var(--warning)', low: 'var(--text-subtle)' };
+
 function ScoreMeter({ score, tone }) {
   const rounded = Math.round(score);
-  const strokeColor = tone === 'high' ? '#10B981' : tone === 'mid' ? '#F59E0B' : '#94A3B8';
   const radius = 16;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (Math.min(100, Math.max(0, rounded)) / 100) * circumference;
@@ -21,7 +23,7 @@ function ScoreMeter({ score, tone }) {
           cy="21"
           r={radius}
           fill="none"
-          stroke={strokeColor}
+          stroke={RING_COLOR[tone]}
           strokeWidth="3.2"
           strokeDasharray={circumference}
           strokeDashoffset={strokeDashoffset}
@@ -34,11 +36,26 @@ function ScoreMeter({ score, tone }) {
   );
 }
 
+// One labelled bar of the score breakdown. The width is the only inline style: it is data, not design.
+function BreakdownBar({ label, percent, tone }) {
+  return (
+    <div>
+      <div className="breakdown-label-row">
+        <span className="breakdown-label">{label}</span>
+        <span className="breakdown-value">{percent}%</span>
+      </div>
+      <div className="breakdown-bar-track">
+        <div className={`breakdown-bar-fill fill-${tone}`} style={{ width: `${percent}%` }} />
+      </div>
+    </div>
+  );
+}
+
 function SkillGroup({ title, skills, tone, empty }) {
   return (
     <div className="skill-group">
       <h4 className="skill-group-title">
-        {title} <span className="slug" style={{ marginLeft: '0.25rem' }}>{skills.length}</span>
+        {title} <span className="slug skill-group-count">{skills.length}</span>
       </h4>
       {skills.length > 0 ? (
         <div className="result-skills">
@@ -49,11 +66,13 @@ function SkillGroup({ title, skills, tone, empty }) {
           ))}
         </div>
       ) : (
-        <p className="slug" style={{ margin: 0 }}>{empty}</p>
+        <p className="slug skill-group-empty">{empty}</p>
       )}
     </div>
   );
 }
+
+const fromFraction = (value) => (value !== undefined ? Math.round(value * 100) : null);
 
 export default function ResultRow({ item, onStatus, onPreview }) {
   const location = useLocation();
@@ -67,11 +86,11 @@ export default function ResultRow({ item, onStatus, onPreview }) {
   const skills = skillComparison(cand.extracted_skills, item.score_breakdown);
   const explanation = explainScore(item.score_breakdown);
 
-  // Derive sub-scores from breakdown if available
+  // Sub-scores from the breakdown; when the server sent none, scale from the overall score.
   const bd = item.score_breakdown || {};
-  const semanticPct = bd.semantic_sim !== undefined ? Math.round(bd.semantic_sim * 100) : null;
-  const skillPct = bd.skill_coverage !== undefined ? Math.round(bd.skill_coverage * 100) : null;
-  const expScore = bd.experience_score !== undefined ? Math.round(bd.experience_score * 100) : null;
+  const semanticPct = fromFraction(bd.semantic_sim) ?? roundedScore;
+  const skillPct = fromFraction(bd.skill_coverage) ?? Math.min(100, Math.round(roundedScore * 0.95));
+  const expPct = fromFraction(bd.experience_score) ?? Math.min(100, Math.round(roundedScore * 0.98));
 
   return (
     <li className={`match-card${open ? ' is-open' : ''}`}>
@@ -123,7 +142,6 @@ export default function ResultRow({ item, onStatus, onPreview }) {
           )}
         </div>
 
-        {/* Circular Match Score Meter */}
         <div className="match-score-container">
           <ScoreMeter score={score} tone={tone} />
           <span className="match-chevron-btn">
@@ -132,11 +150,10 @@ export default function ResultRow({ item, onStatus, onPreview }) {
         </div>
       </button>
 
-      {/* Card action link bar */}
       <div className="match-card-footer-row">
         <Link
           className="match-view-profile-link"
-          to={`/candidates/${cand.id}`}
+          to={candidatePath(cand.id)}
           state={fromState(location, 'Search')}
         >
           View Profile →
@@ -145,10 +162,9 @@ export default function ResultRow({ item, onStatus, onPreview }) {
 
       {open && (
         <div id={panelId} className="match-panel">
-          {/* Action Bar */}
           <div className="match-panel-actions">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-muted)' }}>Status:</span>
+            <div className="match-status-row">
+              <span className="match-status-label">Status:</span>
               <select
                 className="input-field match-status-select"
                 value={cand.status}
@@ -159,55 +175,25 @@ export default function ResultRow({ item, onStatus, onPreview }) {
                 ))}
               </select>
             </div>
-            <div style={{ display: 'flex', gap: '0.5rem', marginLeft: 'auto' }}>
+            <div className="match-panel-buttons">
               <button type="button" className="btn btn-secondary btn-compact" onClick={() => onPreview(cand)}>
                 <FileText size={14} /> View Resume
               </button>
             </div>
           </div>
 
-          {/* AI Score Breakdown Visual Bars */}
           <div className="score-breakdown-card">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-              <h4 style={{ margin: 0, fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-main)' }}>
-                Score Breakdown — {cand.candidate_name}
-              </h4>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8125rem', fontWeight: 600, marginBottom: '0.2rem' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Semantic Match</span>
-                  <span style={{ color: 'var(--text-main)' }}>{semanticPct ?? roundedScore}%</span>
-                </div>
-                <div className="breakdown-bar-track">
-                  <div className="breakdown-bar-fill" style={{ width: `${semanticPct ?? roundedScore}%`, backgroundColor: 'var(--primary)' }} />
-                </div>
-              </div>
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8125rem', fontWeight: 600, marginBottom: '0.2rem' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Skill Coverage</span>
-                  <span style={{ color: 'var(--text-main)' }}>{skillPct ?? Math.min(100, Math.round(roundedScore * 0.95))}%</span>
-                </div>
-                <div className="breakdown-bar-track">
-                  <div className="breakdown-bar-fill" style={{ width: `${skillPct ?? Math.min(100, Math.round(roundedScore * 0.95))}%`, backgroundColor: '#3B82F6' }} />
-                </div>
-              </div>
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8125rem', fontWeight: 600, marginBottom: '0.2rem' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Experience Fit</span>
-                  <span style={{ color: 'var(--text-main)' }}>{expScore ?? Math.min(100, Math.round(roundedScore * 0.98))}%</span>
-                </div>
-                <div className="breakdown-bar-track">
-                  <div className="breakdown-bar-fill" style={{ width: `${expScore ?? Math.min(100, Math.round(roundedScore * 0.98))}%`, backgroundColor: '#10B981' }} />
-                </div>
-              </div>
+            <h4 className="score-breakdown-title">Score Breakdown — {cand.candidate_name}</h4>
+            <div className="breakdown-rows">
+              <BreakdownBar label="Semantic Match" percent={semanticPct} tone="primary" />
+              <BreakdownBar label="Skill Coverage" percent={skillPct} tone="info" />
+              <BreakdownBar label="Experience Fit" percent={expPct} tone="success" />
             </div>
           </div>
 
-          {/* AI Match Summary & Citation */}
           <div className="ai-summary-box">
             <p className="ai-summary-text">
-              <strong style={{ color: 'var(--text-main)', display: 'block', marginBottom: '0.25rem' }}>AI Summary</strong>
+              <strong className="ai-summary-title">AI Summary</strong>
               {item.llm_summary || (cand.years_experience ? `Strong professional with ${cand.years_experience} years experience in ${(cand.extracted_skills || []).slice(0, 4).join(', ')}. All core skills verified in resume profile.` : 'Candidate profile verified with matching skills and domain qualifications.')}
             </p>
             {item.cited_quote && (
@@ -218,7 +204,6 @@ export default function ResultRow({ item, onStatus, onPreview }) {
             )}
           </div>
 
-          {/* Skills Breakdown */}
           <div className="skill-groups">
             <SkillGroup title="Extracted Profile Skills" skills={skills.resumeSkills} tone="plain" empty="No skills were extracted from this resume." />
             {skills.hasJdSkills ? (
@@ -227,18 +212,17 @@ export default function ResultRow({ item, onStatus, onPreview }) {
                 <SkillGroup title="Missing Skills Gap" skills={skills.missing} tone="miss" empty="Every required skill was confirmed in profile." />
               </>
             ) : (
-              <p className="slug" style={{ margin: 0, alignSelf: 'center' }}>
+              <p className="slug skill-groups-note">
                 Select a requirement to see matched vs. missing skill comparison.
               </p>
             )}
           </div>
 
-          {/* Formula calculation details */}
           <details className="result-calculation-details">
-            <summary style={{ cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+            <summary className="calc-summary">
               View full scoring breakdown ({score.toFixed(1)}%)
             </summary>
-            <div className="result-why" style={{ marginTop: '0.5rem', paddingTop: '0.5rem' }}>
+            <div className="result-why calc-body">
               <dl className="kv score-kv">
                 {explanation.map((row) => (
                   <div key={row.key}>

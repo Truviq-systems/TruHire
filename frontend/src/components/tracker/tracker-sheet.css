@@ -1,0 +1,56 @@
+/* Tracker sheets: stage tables, row actions, add/edit form. The table itself is styled by requirements/tracker.css. */
+.stage-count { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--text-subtle); }
+
+.page-tabs { display: flex; gap: var(--space-1); border-bottom: 1px solid var(--border-color); }
+.page-tab {
+  text-decoration: none;
+  padding: var(--space-2) var(--space-4);
+  font-weight: 600;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.page-tab:hover { color: var(--text-main); text-decoration: none; }
+.page-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+.segmented { display: inline-flex; border: 1px solid var(--border-color); border-radius: var(--radius-md); overflow: hidden; }
+.segmented-btn {
+  border: 0;
+  cursor: pointer;
+  padding: var(--space-1) var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-color);
+}
+.segmented-btn:last-child { border-right: 0; }
+.segmented-btn[aria-pressed='true'] { background: var(--primary-light); color: var(--primary); }
+
+.stage { display: flex; flex-direction: column; gap: var(--space-3); }
+.stage-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding-bottom: var(--space-2); border-bottom: 1px solid var(--border-color); }
+.stage-toggle { display: inline-flex; align-items: center; gap: var(--space-2); padding: var(--space-1) 0; background: none; border: 0; cursor: pointer; color: var(--text-main); }
+.stage-toggle h2 { font-size: var(--text-lg); }
+.empty-cell { padding: var(--space-5) var(--space-3); }
+.empty-note { position: sticky; left: var(--space-3); color: var(--text-muted); font-size: var(--text-sm); }
+.stage-empty { display: flex; align-items: center; gap: var(--space-2); color: var(--text-muted); font-size: var(--text-sm); padding: var(--space-3) 0; }
+
+.row-actions { display: flex; align-items: center; gap: var(--space-1); }
+.move-select { width: auto; padding: var(--space-1) var(--space-2); font-size: var(--text-xs); }
+.cell-long { white-space: normal; min-width: 16rem; max-width: 24rem; }
+
+/* Inline row editor: inputs sit in the table cells under their column headers. */
+.row-editor td { background: var(--primary-light); vertical-align: top; }
+.cell-input { width: 100%; min-width: 9rem; padding: var(--space-1) var(--space-2); background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: var(--text-main); font-size: var(--text-sm); outline: none; }
+.cell-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
+.cell-input-date { min-width: 9.5rem; }
+.cell-input-time { min-width: 7rem; }
+.cell-input-long { min-width: 16rem; }
+.name-cell { position: relative; min-width: 12rem; }
+.linked-hint { display: block; margin-top: var(--space-1); font-size: var(--text-xs); color: var(--primary); }
+.name-suggestions { position: absolute; z-index: 5; top: 100%; left: 0; min-width: 22rem; margin-top: var(--space-1); list-style: none; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-md); box-shadow: var(--shadow-lift); }
+.name-suggestions button { display: flex; gap: var(--space-3); align-items: baseline; width: 100%; padding: var(--space-2) var(--space-3); text-align: left; background: none; border: 0; cursor: pointer; }
+.name-suggestions button:hover { background: var(--bg-hover); }
+
+.coming-soon { max-width: var(--measure); padding: var(--space-6) 0; }

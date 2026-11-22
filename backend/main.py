@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from backend.config import settings
+from backend.config import settings, database_target
 from backend.logging_config import setup_logging
 from backend.database import ensure_schema
 from backend.rate_limit import limiter
@@ -51,10 +51,13 @@ def _warm_models():
         except Exception as exc:
             logger.warning("model warm-up skipped for %s: %s", name, exc)
     logger.info("model warm-up finished in %.1fs", time.perf_counter() - started)
+    # Re-indexing needs the embedding model, so it runs only after the warm-up above.
+    ingestion.reconcile_indexes()
 
 
 @app.on_event("startup")
 async def startup_event():
+    logger.info("Database: %s", database_target())
     logger.info("TruHire starting (env=%s, reranker=%s, qdrant_quantization=%s, qdrant_on_disk=%s)", settings.APP_ENV, settings.RERANKER_MODEL if settings.RERANKER_ENABLED else "off", settings.QDRANT_QUANTIZATION, settings.QDRANT_ON_DISK)
     try:
         Path(settings.STORAGE_DIR).mkdir(parents=True, exist_ok=True)
@@ -65,6 +68,9 @@ async def startup_event():
     try:
         ensure_schema()
         logger.info("Database schema initialized successfully.")
+        interrupted = ingestion.fail_stale_batches()
+        if interrupted:
+            logger.warning("Marked %d interrupted ingestion batch(es) as failed.", interrupted)
     except Exception as exc:
         logger.error(f"Database schema init note (will retry on query): {exc}")
     try:

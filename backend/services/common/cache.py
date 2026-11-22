@@ -12,7 +12,6 @@ logger = logging.getLogger(__name__)
 
 _redis_client: Optional[redis.Redis] = None
 _redis_retry_at = 0.0
-_REDIS_RETRY_SECONDS = 30
 _in_memory_store: "OrderedDict[str, Tuple[Any, float]]" = OrderedDict()
 _MAX_MEMORY_ENTRIES = 5000
 
@@ -28,7 +27,7 @@ def get_redis_client() -> Optional[redis.Redis]:
     if time.time() < _redis_retry_at:
         return None
 
-    _redis_retry_at = time.time() + _REDIS_RETRY_SECONDS
+    _redis_retry_at = time.time() + settings.REDIS_RETRY_SECONDS
     redis_url = settings.effective_cache_redis_url
     if not redis_url:
         return None
@@ -39,15 +38,15 @@ def get_redis_client() -> Optional[redis.Redis]:
                 host=settings.REDIS_HOST,
                 port=settings.REDIS_PORT,
                 password=settings.REDIS_PASSWORD,
-                socket_connect_timeout=2,
-                socket_timeout=2,
+                socket_connect_timeout=settings.REDIS_CONNECT_TIMEOUT,
+                socket_timeout=settings.REDIS_CONNECT_TIMEOUT,
                 decode_responses=False,
             )
         else:
             client = redis.from_url(
                 redis_url,
-                socket_connect_timeout=2,
-                socket_timeout=2,
+                socket_connect_timeout=settings.REDIS_CONNECT_TIMEOUT,
+                socket_timeout=settings.REDIS_CONNECT_TIMEOUT,
                 decode_responses=False,
             )
 

@@ -2,13 +2,13 @@ import json
 import logging
 import time
 from typing import Dict, List, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, BackgroundTasks
 from sqlalchemy.orm import Session
 from backend.config import settings
 from backend.database import get_db, SessionLocal
-from backend.models import User, Candidate, CandidateActivity, IngestionBatch, get_next_candidate_display_id
+from backend.models import INGEST_FINAL_FILE_STATUSES, User, Candidate, CandidateActivity, IngestionBatch, get_next_candidate_display_id
 from backend.auth import get_current_user
 from backend.rate_limit import limiter
 from backend.services.common import ai_audit
@@ -20,7 +20,8 @@ from backend.services.ingestion.pii import detect_pii, redact_pii
 from backend.services.ingestion.chunking import profile_chunks, candidate_header
 from backend.services.llm.ai_service import generate_embeddings_batch
 from backend.services.retrieval.filters import index_payload_fields, set_candidate_filter_metadata
-from backend.services.retrieval.opensearch import index_candidates_batch
+from backend.services.llm import local_embeddings
+from backend.services.retrieval.opensearch import index_candidates_batch, get_opensearch_client
 from backend.services.retrieval.qdrant import upsert_candidates_batch, recreate_collection, collection_layout
 
 logger = logging.getLogger(__name__)
@@ -58,7 +59,7 @@ class _Progress:
 
     def file(self, filename: str, status: str, detail: str = "") -> None:
         for f in self.files:
-            if f["filename"] == filename and f["status"] not in ("indexed", "updated", "duplicate", "failed"):
+            if f["filename"] == filename and f["status"] not in INGEST_FINAL_FILE_STATUSES:
                 f["status"], f["detail"] = status, detail
                 break
         self._flush()
@@ -67,15 +68,20 @@ class _Progress:
         self.batch.stage = stage
         self._flush()
 
+    def touch(self) -> None:
+        """Heartbeat only: tells the page (and the stale check) that the task is alive during a long step."""
+        self.batch.updated_at = datetime.utcnow()
+        self.db.commit()
+
     def _flush(self) -> None:
         self.batch.file_status = [dict(f) for f in self.files]  # reassign so SQLAlchemy sees the JSON change
+        self.batch.updated_at = datetime.utcnow()
         self.db.commit()
 
     def skip_remaining(self, detail: str) -> None:
         """Mark every file that has not reached a final state as skipped (used on cancel)."""
-        final = ("indexed", "updated", "duplicate", "failed", "skipped")
         for f in self.files:
-            if f["status"] not in final:
+            if f["status"] not in INGEST_FINAL_FILE_STATUSES:
                 f["status"], f["detail"] = "skipped", detail
         self._flush()
 
@@ -201,7 +207,11 @@ def process_batch(batch_id: str, files_data: List[tuple], user_id: str, duplicat
                 chunk_lists = [profile_chunks(header, safe) for _, header, safe in prepared]
                 for (cand, _, _), chunks in zip(prepared, chunk_lists):
                     progress.file(cand.original_filename, "embedding", f"Creating embeddings for {len(chunks)} chunk(s)")
-                flat_vectors = generate_embeddings_batch([c for chunks in chunk_lists for c in chunks])
+                flat_chunks = [c for chunks in chunk_lists for c in chunks]
+                flat_vectors = []
+                for start in range(0, len(flat_chunks), settings.INGEST_EMBED_SLICE):
+                    flat_vectors.extend(generate_embeddings_batch(flat_chunks[start:start + settings.INGEST_EMBED_SLICE]))
+                    progress.touch()  # a long batch stays visibly alive between slices
                 qdrant_items = []
                 opensearch_items = []
                 offset = 0
@@ -240,9 +250,55 @@ def process_batch(batch_id: str, files_data: List[tuple], user_id: str, duplicat
         clear_cache("requirements:matches:")
         clear_cache("search:")
     except Exception as exc:
-        db.rollback(); logger.warning(f"Batch {batch_id} failed: {exc}")
+        db.rollback()
+        logger.exception("Batch %s stopped unexpectedly", batch_id)
+        fail_batch(batch_id, f"Ingestion stopped unexpectedly: {str(exc)[:200]}")
     finally:
         db.close()
+
+
+def fail_batch(batch_id: str, reason: str) -> None:
+    """Mark a still-processing batch failed, from a fresh session (the one that was working may be broken), so
+    the page never waits on a task that is gone. Files that had not finished are marked failed with the reason."""
+    session = SessionLocal()
+    try:
+        batch = session.query(IngestionBatch).filter(IngestionBatch.id == batch_id).first()
+        if batch is None or batch.status != "processing":
+            return
+        files = [dict(f) for f in (batch.file_status or [])]
+        for f in files:
+            if f.get("status") not in INGEST_FINAL_FILE_STATUSES:
+                f["status"], f["detail"] = "failed", reason[:200]
+        batch.file_status = files
+        batch.error_log = [*(batch.error_log or []), {"filename": "batch", "error": reason}]
+        batch.failed_count = sum(1 for f in files if f.get("status") == "failed")
+        batch.status, batch.stage, batch.updated_at = "failed", "done", datetime.utcnow()
+        session.commit()
+    finally:
+        session.close()
+
+
+def _is_stale(batch: IngestionBatch, now: Optional[datetime] = None) -> bool:
+    """A processing batch whose task stopped writing progress (restart, crash, code reload)."""
+    last = batch.updated_at or batch.created_at
+    if last is None:
+        return False
+    if last.tzinfo is not None:
+        last = last.astimezone(timezone.utc).replace(tzinfo=None)
+    return ((now or datetime.utcnow()) - last) > timedelta(seconds=settings.INGEST_STALE_SECONDS)
+
+
+def fail_stale_batches() -> int:
+    """Startup sweep: fail every processing batch that has stopped updating. Heartbeat-based, so it is safe
+    with several workers or the arq worker: a batch someone is really working on keeps stamping updated_at."""
+    session = SessionLocal()
+    try:
+        stale = [b.id for b in session.query(IngestionBatch).filter(IngestionBatch.status == "processing").all() if _is_stale(b)]
+    finally:
+        session.close()
+    for batch_id in stale:
+        fail_batch(batch_id, "Ingestion was interrupted (the server restarted or the task stopped). Upload the files again.")
+    return len(stale)
 
 
 @router.post("/upload")
@@ -317,6 +373,9 @@ def list_batches(limit: int = 20, offset: int = 0, db: Session = Depends(get_db)
 def get_batch_status(batch_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     batch = db.query(IngestionBatch).filter(IngestionBatch.id == batch_id).first()
     if not batch: raise HTTPException(status_code=404, detail="Ingestion batch not found.")
+    if batch.status == "processing" and _is_stale(batch):
+        fail_batch(batch_id, "Ingestion was interrupted (the server restarted or the task stopped). Upload the files again.")
+        db.refresh(batch)
     return batch
 
 
@@ -332,7 +391,7 @@ def cancel_batch(batch_id: str, db: Session = Depends(get_db), current_user: Use
     return batch
 
 
-def _reindex_task(candidate_ids: List[str], user_id: str) -> None:
+def _reindex_task(candidate_ids: List[str], user_id: Optional[str]) -> None:
     ai_audit.set_user(user_id)
     session = SessionLocal()
     try:
@@ -350,6 +409,51 @@ def _reindex_task(candidate_ids: List[str], user_id: str) -> None:
         session.close()
         clear_cache("requirements:matches:")
         clear_cache("search:")
+
+
+def reconcile_indexes() -> None:
+    """Startup self-heal: if the keyword or vector index holds fewer candidates than the database
+    (a fresh or wiped OpenSearch/Qdrant, an interrupted batch), re-index everyone from the stored
+    resume text. Indexing is idempotent, so a repeat run only costs time. The database is the source
+    of truth; without this, search silently falls back to lexical-only or stored-list results."""
+    from sqlalchemy import func, text
+    session = SessionLocal()
+    try:
+        # One worker reconciles at a time; the others skip. A transaction-scoped lock is released when this
+        # session closes, and is safe behind Neon's pooler (a session-level lock could outlive the request
+        # on a pooled connection and make every later startup skip the repair).
+        if not session.execute(text("SELECT pg_try_advisory_xact_lock(748202)")).scalar():
+            return
+        ids = [row[0] for row in session.query(Candidate.id).filter(func.length(func.trim(Candidate.resume_text)) > 0).all()]
+        if not ids:
+            return
+        status = index_status_counts()
+        if status["documents"] >= len(ids) and status["points"] >= len(ids):
+            return
+        logger.warning("Index drift: %d candidates in the database, %d keyword documents, %d vector points; re-indexing.",
+                       len(ids), status["documents"], status["points"])
+        _reindex_task(ids, user_id=None)
+        logger.info("Index reconciliation finished for %d candidates.", len(ids))
+    except Exception as exc:
+        logger.warning("Index reconciliation skipped: %s", exc)
+    finally:
+        session.close()
+
+
+def index_status_counts() -> Dict[str, int]:
+    """Keyword documents and vector points currently indexed (0 when an index is unreachable or missing)."""
+    documents = points = 0
+    client = get_opensearch_client()
+    if client is not None:
+        try:
+            documents = int(client.count(index=settings.OPENSEARCH_INDEX).get("count", 0))
+        except Exception:
+            documents = 0
+    try:
+        points = int(collection_layout().get("points") or 0)
+    except Exception:
+        points = 0
+    return {"documents": documents, "points": points}
 
 
 def _iso_utc(dt: Optional[datetime]) -> Optional[str]:
@@ -482,9 +586,28 @@ def reparse_candidates(background_tasks: BackgroundTasks, db: Session = Depends(
 
 
 @router.get("/index-status")
-def index_status(current_user: User = Depends(get_current_user)):
-    """Vector collection health: point count, on-disk vectors and quantization in effect."""
-    return collection_layout()
+def index_status(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Retrieval health: vector collection, keyword index and embedding model, plus how many
+    candidates the database holds, so an empty or lagging index is visible at a glance."""
+    status = {"vector": {}, "lexical": {}, "embedding": {}, "database_candidates": db.query(Candidate).count()}
+    try:
+        status["vector"] = collection_layout()
+    except Exception as exc:
+        status["vector"] = {"exists": False, "error": str(exc)[:200]}
+    client = get_opensearch_client()
+    if client is None:
+        status["lexical"] = {"reachable": False}
+    else:
+        try:
+            status["lexical"] = {"reachable": True, "documents": client.count(index=settings.OPENSEARCH_INDEX).get("count")}
+        except Exception as exc:
+            status["lexical"] = {"reachable": True, "documents": None, "error": str(exc)[:200]}
+    status["embedding"] = {"provider": settings.EMBEDDING_PROVIDER, "model_loaded": local_embeddings.is_ready() if settings.EMBEDDING_PROVIDER == "local" else None}
+    expected = status["database_candidates"]
+    status["needs_reindex"] = bool(expected) and (
+        (status["lexical"].get("documents") or 0) < expected or (status["vector"].get("points") or 0) < expected
+    )
+    return status
 
 
 @router.post("/reindex", status_code=202)

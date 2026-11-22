@@ -2,6 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { formatIst } from '../../lib/datetime';
 import { fromState } from '../../lib/navigation';
 
+import { candidatePath } from '../../config/pages';
 // The structured result a reply can carry (lists of candidates, demands, history, and the confirm card for an action).
 export default function ResultCards({ data, index, expanded: openClients, onToggle, onPrefill, onDecide, deciding }) {
   const location = useLocation();
@@ -26,7 +27,7 @@ export default function ResultCards({ data, index, expanded: openClients, onTogg
                     <section className="truhire-assistant-client-requirements" key={group.position.id}>
                       <h4 className="assistant-card-title">Candidates for requirement</h4>
                       <strong>{group.position.title}</strong><small>{group.position.client_name} · {group.total_matches} matches</small>
-                      {group.results.map((row) => <Link key={row.candidate.id} to={`/candidates/${row.candidate.id}`} state={fromState(location, 'Assistant')}>
+                      {group.results.map((row) => <Link key={row.candidate.id} to={candidatePath(row.candidate.id)} state={fromState(location, 'Assistant')}>
                         <b>{row.candidate.candidate_name}</b><small>{typeof row.match_score === 'number' ? `${row.match_score.toFixed(1)}% match` : 'Open candidate profile'}</small>
                       </Link>)}
                       {!group.results.length && <span>No candidates matched this requirement.</span>}
@@ -34,7 +35,7 @@ export default function ResultCards({ data, index, expanded: openClients, onTogg
                   ))}
                   {data?.action === 'candidate_history' && <div className="truhire-assistant-results">
                     <h4 className="assistant-card-title">Candidate history</h4>
-                    <Link to={`/candidates/${data.candidate_id}`} state={fromState(location, 'Assistant')}><b>{data.candidate_display_id} · {data.candidate_name}</b><small>Open full candidate history</small></Link>
+                    <Link to={candidatePath(data.candidate_id)} state={fromState(location, 'Assistant')}><b>{data.candidate_display_id} · {data.candidate_name}</b><small>Open full candidate history</small></Link>
                     {!!data.requirements?.length && <h4 className="assistant-card-title">Submitted to - current status</h4>}
                     {(data.requirements || []).map((item) => <div key={item.id}><b>{item.client_name || item.title} - {item.status}</b><small>{[item.last_modified && `Last modified ${formatIst(item.last_modified)}`, item.modified_by && `Modified by ${item.modified_by}`].filter(Boolean).join(' | ')}</small></div>)}
                     {!!data.items?.length && <h4 className="assistant-card-title">Notes</h4>}
@@ -46,7 +47,7 @@ export default function ResultCards({ data, index, expanded: openClients, onTogg
                   </div>}
                   {data?.action === 'candidate_comparison' && <div className="truhire-assistant-results">
                     <h4 className="assistant-card-title">Candidate comparison</h4>
-                    {data.candidates.map((candidate) => <Link key={candidate.id} to={`/candidates/${candidate.id}`} state={fromState(location, 'Assistant')}>
+                    {data.candidates.map((candidate) => <Link key={candidate.id} to={candidatePath(candidate.id)} state={fromState(location, 'Assistant')}>
                       <b>{candidate.display_id} · {candidate.name}</b>
                       <small>{candidate.years_experience ?? 'Experience not recorded'} years · {candidate.status}</small>
                       <small>Skills: {candidate.skills.join(', ') || 'Not recorded'}</small>
@@ -54,7 +55,7 @@ export default function ResultCards({ data, index, expanded: openClients, onTogg
                   </div>}
                   {data?.action === 'candidate_lookup' && <div className="truhire-assistant-results">
                     <h4 className="assistant-card-title">Matching candidates</h4>
-                    {data.results.map((candidate) => <Link key={candidate.id} to={`/candidates/${candidate.id}`} state={fromState(location, 'Assistant')}>
+                    {data.results.map((candidate) => <Link key={candidate.id} to={candidatePath(candidate.id)} state={fromState(location, 'Assistant')}>
                       <b>{candidate.display_id} · {candidate.candidate_name}</b>
                       <small>{[candidate.current_company, candidate.email, candidate.phone, candidate.status].filter(Boolean).join(' · ')}</small>
                     </Link>)}

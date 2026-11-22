@@ -3,6 +3,7 @@ import { cachingAdapter, clearRequestCache } from './requestCache';
 import { STORAGE_KEYS, TIMEOUTS_MS } from '../config/env';
 import { API_BASE_URL } from './apiBase';
 
+import { PAGES } from '../config/pages';
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: TIMEOUTS_MS.default,
@@ -26,13 +27,13 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && error.response.status === 401) {
-      if (!window.location.pathname.startsWith('/login')) {
+      if (!window.location.pathname.startsWith(PAGES.login.path)) {
         clearRequestCache();
         localStorage.removeItem(STORAGE_KEYS.token);
         localStorage.removeItem(STORAGE_KEYS.user);
         // Keep the current page so signing back in returns here instead of the default section.
         const next = `${window.location.pathname}${window.location.search}`;
-        window.location.href = `/login?next=${encodeURIComponent(next)}`;
+        window.location.href = `${PAGES.login.path}?next=${encodeURIComponent(next)}`;
       }
     }
     return Promise.reject(error);
@@ -138,7 +139,13 @@ export const candidatesApi = {
 };
 
 export const trackerApi = {
+  // Read-only Requirement Tracker (one demand's submitted candidates).
   list: (params = {}) => api.get('/tracker', { params }),
+  // Editable sheets: kind is 'pipeline' or 'submission'. Always fresh: rows are edited by the whole team.
+  sheet: (kind, params = {}) => api.get(`/tracker/${kind}`, { params, headers: { 'X-Cache-Bypass': '1' } }),
+  create: (kind, body) => api.post(`/tracker/${kind}/entries`, body),
+  update: (id, body) => api.patch(`/tracker/entries/${id}`, body),
+  remove: (id) => api.delete(`/tracker/entries/${id}`),
 };
 
 export const searchApi = {
@@ -168,9 +175,11 @@ export const assistantApi = {
   }),
 };
 
-export const analyticsApi = {
+export const insightsApi = {
+  // One row per requirement (positions, age, candidates per review stage) for the Requirements report.
+  getRequirements: () => api.get('/insights/requirements'),
   getOverview: (positionId = null) => {
-    const url = positionId ? `/analytics/overview?position_id=${positionId}` : '/analytics/overview';
+    const url = positionId ? `/insights/overview?position_id=${positionId}` : '/insights/overview';
     return api.get(url);
   },
 };

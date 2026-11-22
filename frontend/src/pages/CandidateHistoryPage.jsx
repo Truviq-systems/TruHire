@@ -6,6 +6,7 @@ import { fromState } from '../lib/navigation';
 import './candidate-detail.css';
 import { formatIst } from '../lib/datetime';
 
+import { candidatePath } from '../config/pages';
 const PAGE_SIZE = 25;
 
 export default function CandidateHistoryPage() {
@@ -60,7 +61,7 @@ export default function CandidateHistoryPage() {
             <thead><tr><th>Candidate</th><th>Email</th><th>Phone</th><th>Current company</th><th>Submitted to - Current status</th><th>Availability</th></tr></thead>
             <tbody>
               {rows.map((candidate) => <tr key={candidate.id}>
-                <td><Link to={`/candidates/${candidate.id}`} state={fromState(location, 'Candidate History')} style={{ fontWeight: 700 }}>{candidate.candidate_name}</Link>
+                <td><Link to={candidatePath(candidate.id)} state={fromState(location, 'Candidate History')} style={{ fontWeight: 700 }}>{candidate.candidate_name}</Link>
                   <div className="text-subtle" style={{ fontSize: '0.75rem' }}>{candidate.display_id}</div></td>
                 <td>{candidate.email || '—'}</td>
                 <td>{candidate.phone || '—'}</td>

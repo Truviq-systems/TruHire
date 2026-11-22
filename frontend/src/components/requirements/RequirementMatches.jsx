@@ -6,6 +6,7 @@ import Notice from '../ui/Notice';
 import MatchRow from './MatchRow';
 import './requirements.css';
 
+import { PAGES } from '../../config/pages';
 export default function RequirementMatches({
   jd, matches, loading, minScore, coverage, statusError, assignments, users, shortlistedCount,
   onStatus, onAssign, onPreview, onEmail,
@@ -25,7 +26,7 @@ export default function RequirementMatches({
             title={shortlistedCount ? 'Draft emails for shortlisted candidates' : 'Shortlist a candidate first'}>
             <Mail size={14} /> Email shortlisted ({shortlistedCount})
           </button>
-          <Link to="/search" className="btn btn-secondary btn-compact"><Search size={14} /> Search</Link>
+          <Link to={PAGES.search.path} className="btn btn-secondary btn-compact"><Search size={14} /> Search</Link>
         </span>
       </div>
 

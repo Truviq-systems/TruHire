@@ -24,7 +24,7 @@ const TTL_RULES = [
   [/^\/email\/config/, 300000],           // static for the lifetime of the server
   [/^\/auth\/me/, 120000],
   [/^\/meta/, 300000],                    // enums and limits only change with a server deploy
-  [/^\/analytics\//, 60000],
+  [/^\/insights\//, 60000],
   [/^\/retention\/status/, 60000],
   [/^\/job-descriptions\/[^/]+\/matches/, 300000],
   [/^\/job-descriptions/, 60000],
@@ -37,9 +37,9 @@ const DEFAULT_TTL = 0; // unknown endpoints are never cached by accident
 
 // Which cached reads a successful write can change. Unlisted writes clear everything (safe default).
 const INVALIDATION = [
-  [/^\/ingest\//, [/^\/candidates/, /^\/analytics/, /^\/job-descriptions/, /^\/search\/state/, /^\/ingest\//]],
-  [/^\/job-descriptions/, [/^\/job-descriptions/, /^\/analytics/, /^\/email\/history/, /^\/candidates/, /^\/search\/state/]],
-  [/^\/candidates/, [/^\/candidates/, /^\/job-descriptions/, /^\/analytics/]],
+  [/^\/ingest\//, [/^\/candidates/, /^\/insights/, /^\/job-descriptions/, /^\/search\/state/, /^\/ingest\//]],
+  [/^\/job-descriptions/, [/^\/job-descriptions/, /^\/insights/, /^\/email\/history/, /^\/candidates/, /^\/search\/state/]],
+  [/^\/candidates/, [/^\/candidates/, /^\/job-descriptions/, /^\/insights/]],
   [/^\/search/, [/^\/search\/state/]],
   // sending/retrying emails changes last_email shown in the requirement match lists too
   [/^\/email/, [/^\/email\/history/, /^\/job-descriptions/]],

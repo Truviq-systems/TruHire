@@ -122,6 +122,9 @@ class Settings(BaseSettings):
     LOCAL_EMBEDDING_MODEL: str = "BAAI/bge-base-en-v1.5"
     EMBEDDING_MODEL: Optional[str] = None
     EMBEDDING_DIM: int = 768
+    # Where fastembed keeps the downloaded ONNX model. Unset = fastembed's default, a temp dir that
+    # is wiped on restart (re-download, 30-60s cold start). Point it at a persistent disk in production.
+    FASTEMBED_CACHE_DIR: Optional[str] = None
 
     # Laya: local non-autoregressive decision model (choice/score/noul), used as a fast
     # judgment layer instead of an LLM call for reranking, chat intent/decisions, and
@@ -226,6 +229,25 @@ class Settings(BaseSettings):
 
     ANALYTICS_TOP_SKILLS: int = 20
     CACHE_TTL_QUERY: int = 60
+    # Assistant pre-flight (services/llm/preflight.py): the rate gate before a model-backed turn, the exact-match
+    # answer cache for standalone read-only questions, and the size the agent's context is trimmed to
+    # (characters; about a quarter as many tokens).
+    ASSISTANT_RATE_BURST: int = 15
+    ASSISTANT_RATE_REFILL_SECONDS: float = 4.0
+    ASSISTANT_CACHE_TTL: int = 300
+    AGENT_CONTEXT_CHAR_BUDGET: int = 24000
+    # Analytics report: weeks on the demand timeline, and how many items "Needs attention" lists.
+    ANALYTICS_TIMELINE_WEEKS: int = 26
+    ANALYTICS_ATTENTION_LIMIT: int = 5
+    # Ingestion: a processing batch with no progress write for this long is treated as dead and marked failed;
+    # the progress card says the AI step is slow after this many seconds without an update.
+    INGEST_STALE_SECONDS: int = 180
+    INGEST_SLOW_AFTER_SECONDS: int = 20
+    # Chunks embedded per call, so a large batch reports progress (and a heartbeat) between slices.
+    INGEST_EMBED_SLICE: int = 32
+    # Redis cache: connect timeout, and how long to wait before trying an unreachable Redis again.
+    REDIS_CONNECT_TIMEOUT: float = 2.0
+    REDIS_RETRY_SECONDS: int = 30
     CACHE_TTL_SEARCH: int = 900  # search results; every candidate/JD/index write clears the "search:" prefix
     # Scored requirement->candidate matches are expensive (embedding + retrieval + rerankers). They are keyed by
     # JD version and index epoch, so they self-invalidate on any change and can safely live long.
@@ -329,3 +351,20 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def database_target() -> str:
+    """The database the app will use as `user@host:port/db` (never the password), plus a note when a
+    process environment variable overrides the env file. An exported DATABASE_URL in the terminal wins
+    over .env, so a stale one silently points the app at the wrong login or server."""
+    from urllib.parse import urlparse
+    parsed = urlparse(settings.DATABASE_URL)
+    target = f"{parsed.username}@{parsed.hostname}:{parsed.port}{parsed.path}"
+    from_env = os.environ.get("DATABASE_URL")
+    if from_env and from_env == settings.DATABASE_URL:
+        from dotenv import dotenv_values
+        in_file = dotenv_values(os.getenv("TRUHIRE_ENV_FILE", ".env")).get("DATABASE_URL")
+        if in_file and in_file != from_env:
+            return (f"{target}  <- from the DATABASE_URL environment variable, which overrides "
+                    f"{os.getenv('TRUHIRE_ENV_FILE', '.env')}. Clear it with: Remove-Item Env:DATABASE_URL")
+    return target

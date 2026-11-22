@@ -38,7 +38,8 @@ _DOMAIN = re.compile(
     r"vacanc\w*|hir(?:e|es|ed|ing)|recruit\w*|interview\w*|shortlist\w*|onboard\w*|notice\s+period|"
     r"skills?|experience|salary|ctc|offer|e-?mails?|drafts?|ingest\w*|upload\w*|search|match\w*|scor\w*|"
     r"rank\w*|reranker|practice|practices|folder|categor\w*|client|role|roles|location|analytics|history|assistant|guardrails?|"
-    r"status|availability|not\s+active|mapped|fulfilled|reject\w*|dm-\d+|tru-cn-\d+)\b",
+    r"status|availability|not\s+active|mapped|fulfilled|reject\w*|dm-\d+|tru-cn-\d+|"
+    r"trackers?|pipeline|submissions?|sheets?|l1|l2|accounts?|settings?|profile|my\s+name|display\s+name|comments?|reviews?|audit|users?|dashboard|reports?)\b",
     re.IGNORECASE,
 )
 

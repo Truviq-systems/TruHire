@@ -7,6 +7,7 @@ import { fromState } from '../../lib/navigation';
 import Notice from '../ui/Notice';
 import './tracker.css';
 
+import { candidatePath } from '../../config/pages';
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}T/;
 const shown = (key, value) => (key === 'source_date' && ISO_DATE.test(value || '') ? formatIst(value) : value || '');
 
@@ -61,7 +62,7 @@ export default function RequirementTracker({ positionId }) {
                     {data.columns.map((c) => (
                       <td key={c.key}>
                         {c.key === 'candidate_name'
-                          ? <Link to={`/candidates/${row.candidate_id}`} state={fromState(location, 'Tracker')} className="tracker-link">{row.values.candidate_name}</Link>
+                          ? <Link to={candidatePath(row.candidate_id)} state={fromState(location, 'Tracker')} className="tracker-link">{row.values.candidate_name}</Link>
                           : shown(c.key, row.values[c.key])}
                       </td>
                     ))}

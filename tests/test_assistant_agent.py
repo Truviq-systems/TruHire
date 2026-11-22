@@ -53,16 +53,28 @@ def _named(env, name):
     return candidate
 
 
-def test_open_positions_come_from_the_get_demand_tool(agent_env):
+def test_open_positions_are_answered_by_code_before_any_model_call(agent_env):
     position = agent_env["db"].get(Position, agent_env["make_jd"]())
     position.no_of_positions = 7
     agent_env["db"].commit()
-    model = agent_env["install"](use(call("get_demand", demand=position.display_id)), say("It has 7 open positions."))
+    model = agent_env["install"](say("the model must not be asked"))
 
     body = ask(agent_env, f"how many open positions does {position.display_id} have?").json()
 
-    assert body["reply"] == "It has 7 open positions."
+    assert "7 open positions" in body["reply"] and position.display_id in body["reply"]
     assert body["action"] == "open_positions" and body["requirements"][0]["no_of_positions"] == 7
+    assert model.calls == []  # pre-flight routing: a saved count needs no inference
+
+
+def test_get_demand_tool_still_feeds_the_model_when_the_question_is_not_a_plain_count(agent_env):
+    position = agent_env["db"].get(Position, agent_env["make_jd"]())
+    position.no_of_positions = 7
+    agent_env["db"].commit()
+    model = agent_env["install"](use(call("get_demand", demand=position.display_id)), say("Seven positions, owner unknown."))
+
+    body = ask(agent_env, f"summarise {position.display_id} for the Monday hiring meeting").json()
+
+    assert body["reply"] == "Seven positions, owner unknown."
     tool_result = model.calls[1][-1]
     assert tool_result["role"] == "tool" and "untrusted_data" in tool_result["content"] and '"no_of_positions": 7' in tool_result["content"]
 

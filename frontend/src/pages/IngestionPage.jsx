@@ -13,6 +13,9 @@ import { POLL_MS, STORAGE_KEYS } from '../config/env';
 import IngestedResumes from '../components/ingestion/IngestedResumes';
 import DuplicateDialog from '../components/ingestion/DuplicateDialog';
 
+import { PAGES } from '../config/pages';
+import UploadProgress from '../components/ingestion/UploadProgress';
+import { useMeta } from '../context/MetaContext';
 // The most recent upload in this tab, so its progress is still shown after visiting
 // Ingestion History (or any other section) and coming back.
 const LAST_UPLOAD_KEY = STORAGE_KEYS.lastUploadBatch;
@@ -30,46 +33,8 @@ function writeSession(key, value) {
   }
 }
 
-// Per-file pipeline states reported by the backend (see _Progress in routers/ingestion.py). Only their weight
-// feeds the bulk progress bar; individual resume statuses are not shown.
-const FILE_STATUS = {
-  queued: { pct: 0 },
-  extracting: { pct: 0.15 },
-  analyzing: { pct: 0.4 },
-  parsed: { pct: 0.55 },
-  embedding: { pct: 0.7 },
-  indexing: { pct: 0.85 },
-  indexed: { pct: 1 },
-  updated: { pct: 1 },
-  duplicate: { pct: 1 },
-  skipped: { pct: 1 },
-  failed: { pct: 1 },
-};
-const STAGES = [
-  { key: 'reading', label: 'Reading & AI analysis' },
-  { key: 'embedding', label: 'Embedding' },
-  { key: 'indexing', label: 'Indexing' },
-  { key: 'done', label: 'Done' },
-];
-
-function summarize(progress) {
-  const files = progress?.file_status || [];
-  const count = (st) => files.filter(f => f.status === st).length;
-  const live = files.length > 0;
-  return {
-    files,
-    pct: live
-      ? Math.round((files.reduce((sum, f) => sum + (FILE_STATUS[f.status]?.pct ?? 0), 0) / files.length) * 100)
-      : (progress?.total_files > 0
-          ? Math.min(100, Math.round(((progress.processed_count + progress.duplicate_count + progress.failed_count) / progress.total_files) * 100))
-          : 0),
-    processed: live ? count('indexed') + count('updated') : progress?.processed_count ?? 0,
-    duplicates: live ? count('duplicate') : progress?.duplicate_count ?? 0,
-    failed: live ? count('failed') : progress?.failed_count ?? 0,
-  };
-}
-
 export default function IngestionPage() {
+  const { ingestion } = useMeta();
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState(null);
@@ -96,7 +61,7 @@ export default function IngestionPage() {
         const res = await ingestionApi.getBatch(activeUploadId);
         if (cancelled) return;
         setUploadProgress(res.data);
-        if (['completed', 'failed', 'cancelled'].includes(res.data.status)) {
+        if (ingestion.finished_batch_statuses.includes(res.data.status)) {
           setActiveUploadId(null);
           setResumesVersion((v) => v + 1);
         }
@@ -115,7 +80,7 @@ export default function IngestionPage() {
     const interval = setInterval(poll, POLL_MS.uploadProgress);
 
     return () => { cancelled = true; clearInterval(interval); };
-  }, [activeUploadId]);
+  }, [activeUploadId, ingestion]);
 
   const handleDrag = (e) => {
     e.preventDefault();
@@ -195,10 +160,7 @@ export default function IngestionPage() {
       setUploadMessage({ type: 'success', text: `Uploaded ${selectedFiles.length} file(s). Processing in background...` });
       setActiveUploadId(res.data.batch_id);
       writeSession(LAST_UPLOAD_KEY, res.data.batch_id);
-      setUploadProgress({
-        status: 'processing', stage: 'queued', total_files: res.data.total_files, processed_count: 0, duplicate_count: 0, failed_count: 0, error_log: [],
-        file_status: selectedFiles.map(f => ({ filename: f.name, status: 'queued', detail: '' })),
-      });
+      setUploadProgress(null);  // the first real row arrives from the poll that starts with the new upload id
       setSelectedFiles([]);
     } catch (err) {
       setUploadMessage({
@@ -215,7 +177,7 @@ export default function IngestionPage() {
       <header className="ingest-head">
         <h1 className="page-header-title">Bulk Resume Ingestion</h1>
         <Link
-          to={`/ingestion/history${readSession(HISTORY_QUERY_KEY) || ''}`}
+          to={`${PAGES.ingestionHistory.path}${readSession(HISTORY_QUERY_KEY) || ''}`}
           state={fromState(location, 'Ingestion')}
           className="btn btn-secondary"
         >
@@ -342,7 +304,7 @@ export default function IngestionPage() {
           <div className="card ingest-panel">
             <div className="ingest-panel-head">
               <h3 className="ingest-panel-title">Upload Progress</h3>
-              {activeUploadId && uploadProgress?.status === 'processing' && (
+              {activeUploadId && uploadProgress && !ingestion.finished_batch_statuses.includes(uploadProgress.status) && (
                 <span className="cluster cluster-tight">
                   <button type="button" className="btn btn-secondary btn-compact" onClick={handleStop} disabled={stopping}>
                     <Square size={12} /> {stopping ? 'Stopping…' : 'Stop'}
@@ -354,101 +316,10 @@ export default function IngestionPage() {
               )}
             </div>
 
-            {uploadProgress ? ((() => {
-              const sum = summarize(uploadProgress);
-              const stageIdx = uploadProgress.stage === 'done' ? STAGES.length - 1 : Math.max(0, STAGES.findIndex(st => st.key === uploadProgress.stage));
-              const finished = ['completed', 'failed', 'cancelled'].includes(uploadProgress.status);
-              return (
-              <div style={{
-                padding: '1.25rem',
-                border: '1px solid var(--border-color)',
-                borderRadius: 'var(--radius-md)',
-                backgroundColor: 'var(--bg-surface)',
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                  <span style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-main)' }}>{sum.pct}%</span>
-                  <span className={`badge ${
-                    uploadProgress.status === 'completed' ? 'badge-success' :
-                    uploadProgress.status === 'processing' ? 'badge-warning' :
-                    uploadProgress.status === 'cancelled' ? 'badge-neutral' : 'badge-danger'
-                  }`}>
-                    {uploadProgress.status}
-                  </span>
-                </div>
-
-                {/* Overall stage tracker */}
-                <div style={{ display: 'flex', gap: '0.35rem', marginBottom: '0.9rem' }}>
-                  {STAGES.map((st, i) => {
-                    const done = finished || i < stageIdx;
-                    const current = !finished && i === stageIdx;
-                    return (
-                      <div key={st.key} style={{
-                        flex: 1, textAlign: 'center', fontSize: '0.68rem', fontWeight: 700, padding: '0.35rem 0.25rem', borderRadius: '6px',
-                        backgroundColor: done ? 'var(--success-bg)' : current ? 'var(--primary-light)' : 'var(--bg-subtle)',
-                        color: done ? 'var(--success-text)' : current ? 'var(--primary)' : 'var(--text-subtle)',
-                        border: current ? '1px solid var(--primary)' : '1px solid transparent',
-                      }}>
-                        {st.label}
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Progress bar */}
-                <div className="progress-bar-bg" style={{ marginBottom: '1rem' }}>
-                  <div className="progress-bar-fill" style={{ width: `${sum.pct}%`, transition: 'width 0.4s ease' }} />
-                </div>
-
-                {/* Telemetry Metric Cards */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.75rem', textAlign: 'center' }}>
-                  <div style={{ padding: '0.75rem 0.5rem', backgroundColor: 'var(--bg-subtle)', borderRadius: '6px' }}>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-subtle)' }}>Total</div>
-                    <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>{uploadProgress.total_files}</div>
-                  </div>
-                  <div style={{ padding: '0.75rem 0.5rem', backgroundColor: 'var(--success-bg)', borderRadius: '6px' }}>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--success-text)' }}>Processed</div>
-                    <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--success-text)' }}>{sum.processed}</div>
-                  </div>
-                  <div style={{ padding: '0.75rem 0.5rem', backgroundColor: 'var(--warning-bg)', borderRadius: '6px' }}>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--warning-text)' }}>Duplicates</div>
-                    <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--warning-text)' }}>{sum.duplicates}</div>
-                  </div>
-                  <div style={{ padding: '0.75rem 0.5rem', backgroundColor: 'var(--danger-bg)', borderRadius: '6px' }}>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--danger-text)' }}>Failed</div>
-                    <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--danger-text)' }}>{sum.failed}</div>
-                  </div>
-                </div>
-
-                {/* Per-file Error Log / Duplicates */}
-                {uploadProgress.error_log && uploadProgress.error_log.length > 0 && (
-                  <div style={{ marginTop: '1.25rem' }}>
-                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.5rem', textTransform: 'uppercase' }}>
-                      Notices ({uploadProgress.error_log.length})
-                    </div>
-                    <div style={{
-                      maxHeight: '140px',
-                      overflowY: 'auto',
-                      backgroundColor: 'var(--bg-subtle)',
-                      borderRadius: '6px',
-                      padding: '0.5rem',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '0.35rem'
-                    }}>
-                      {uploadProgress.error_log.map((err, i) => (
-                        <div key={i} style={{ fontSize: '0.75rem', display: 'flex', gap: '0.5rem', color: 'var(--text-muted)' }}>
-                          <span style={{ fontWeight: 600, color: 'var(--text-main)', flexShrink: 0 }}>{err.filename}:</span>
-                          <span>{err.error}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-              );
-            })()
+            {uploadProgress ? (
+              <UploadProgress progress={uploadProgress} />
             ) : (
-              <div className="ingest-empty">Upload resumes to see progress here.</div>
+              <div className="ingest-empty" role="status">{activeUploadId ? 'Starting upload…' : 'Upload resumes to see progress here.'}</div>
             )}
           </div>
         </div>

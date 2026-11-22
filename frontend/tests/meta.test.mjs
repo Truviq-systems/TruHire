@@ -26,3 +26,11 @@ run('normalizeMeta survives null and garbage', () => {
   assert.deepEqual(normalizeMeta(null), normalizeMeta(undefined));
   assert.equal(normalizeMeta('nope').page_sizes.history, FALLBACK_META.page_sizes.history);
 });
+
+import { fromServer } from '../src/lib/meta.js';
+run('the built-in fallback is never "loaded"; only a server answer is', () => {
+  assert.equal(normalizeMeta(FALLBACK_META).loaded, false);
+  assert.equal(normalizeMeta(null).loaded, false);
+  assert.equal(fromServer({ requirement_statuses: ['A'] }).loaded, true);
+  assert.deepEqual(fromServer({ requirement_statuses: ['A'] }).requirement_statuses, ['A']);
+});

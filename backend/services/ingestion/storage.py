@@ -12,12 +12,6 @@ from backend.config import settings
 logger = logging.getLogger(__name__)
 
 
-def ensure_storage_dir() -> Path:
-    storage_path = Path(settings.STORAGE_DIR)
-    storage_path.mkdir(parents=True, exist_ok=True)
-    return storage_path
-
-
 def ensure_resume_storage_dir() -> Path:
     storage_path = Path(settings.RESUME_STORAGE_DIR)
     storage_path.mkdir(parents=True, exist_ok=True)
