@@ -566,7 +566,7 @@ def confirm(session_id: str, db: Session = Depends(get_db), user: User = Depends
         request = df.build_request({**(s.values or {}), "file_url": (s.source_document or {}).get("file_url"),
                                     "original_filename": (s.source_document or {}).get("filename")})
     except ValidationError as exc:
-        raise HTTPException(422, "; ".join(f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors()))
+        raise HTTPException(422, "; ".join(f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors())) from exc
     s.status = "creating"
     db.commit()
     try:
@@ -578,13 +578,13 @@ def confirm(session_id: str, db: Session = Depends(get_db), user: User = Depends
         db.commit()
         _audit("create_failed", s, detail=str(exc.detail))
         raise
-    except Exception:
+    except Exception as exc:
         db.rollback()
         s = _owned(db, user, session_id, lock=True)
         s.status = "review"
         db.commit()
         logger.exception("Assistant demand creation failed")
-        raise HTTPException(500, "The demand could not be created. Your answers are saved; please try again.")
+        raise HTTPException(500, "The demand could not be created. Your answers are saved; please try again.") from exc
     s = _owned(db, user, session_id, lock=True)
     s.status, s.current_field, s.created_position_id = "created", None, created.id
     summary = f"Your demand has been created successfully. {created.display_id} · {created.title}"

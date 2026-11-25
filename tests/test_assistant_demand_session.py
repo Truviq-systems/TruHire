@@ -69,7 +69,7 @@ def _op(client, headers, session, op, body=None, expect=200):
 def _fill_required(client, headers, session):
     session = _op(client, headers, session, "mode", {"mode": "step_by_step"})["session"]
     assert session["current_field"] == "title"
-    for key, value in (("title", "Java Lead"), ("demand_id", "Java")):
+    for _key, value in (("title", "Java Lead"), ("demand_id", "Java")):
         session = _op(client, headers, session, "answer", {"value": value})["session"]
     while session["status"] == "collecting":
         field = next(f for f in session["fields"] if f["key"] == session["current_field"])

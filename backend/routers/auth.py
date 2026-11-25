@@ -88,8 +88,8 @@ async def login(request: Request, db: Session = Depends(get_db)):
     if "application/json" in content_type:
         try:
             body = await request.json()
-        except ValueError:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Request body is not valid JSON.")
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Request body is not valid JSON.") from exc
         if not isinstance(body, dict):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Request body must be a JSON object.")
         email = body.get("email", "").lower().strip()
