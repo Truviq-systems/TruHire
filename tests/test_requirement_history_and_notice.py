@@ -56,21 +56,22 @@ def _listed(client, headers, jd_id):
     return next(j for j in client.get("/api/job-descriptions", headers=headers).json() if j["id"] == jd_id)
 
 
-def test_create_defaults_to_open_and_persists_details(ctx):
+def test_create_defaults_to_active_and_persists_details(ctx):
     client, headers, db, user, created = ctx
     jd = _create(client, headers, created, role="Backend Engineer", location="Pune", experience_years=5,
-                 start_date="2026-11-01", end_date="2026-12-31")
-    assert jd["status"] == "Open"
-    assert (jd["role"], jd["location"], jd["experience_years"]) == ("Backend Engineer", "Pune", 5)
+                 relevant_experience_years=3, requirement_received_date="2026-10-15", start_date="2026-11-01", end_date="2026-12-31")
+    assert jd["status"] == "Active"
+    assert (jd["role"], jd["location"], jd["experience_years"], jd["relevant_experience_years"]) == ("Backend Engineer", "Pune", 5, 3)
     listed = _listed(client, headers, jd["id"])
+    assert listed["requirement_received_date"] == "2026-10-15"
     assert listed["start_date"] == "2026-11-01" and listed["end_date"] == "2026-12-31"
     assert listed["created_by_name"] == "History Tester"
 
 
 @pytest.mark.parametrize("bad", [
-    {"status": "Draft"}, {"status": "On Hold"}, {"experience_years": -1}, {"experience_years": 99},
-    {"start_date": "2026-12-31", "end_date": "2026-01-01"}, {"start_date": "not-a-date"},
-    {"experience_years": 5, "experience_max_years": 3}, {"experience_max_years": 99},
+    {"status": "Draft"}, {"status": "Closed"}, {"experience_years": -1}, {"experience_years": 99},
+    {"start_date": "2026-12-31", "end_date": "2026-01-01"}, {"start_date": "not-a-date"}, {"requirement_received_date": "not-a-date"},
+    {"experience_years": 3, "relevant_experience_years": 5}, {"relevant_experience_years": 99},
 ])
 def test_invalid_jd_details_rejected(ctx, bad):
     client, headers, db, user, created = ctx
@@ -128,23 +129,23 @@ def test_chosen_folder_is_kept_and_can_be_changed_on_edit(ctx):
     assert client.put(f"/api/job-descriptions/{jd['id']}", json={"demand_id": "nope"}, headers=headers).status_code == 422
 
 
-def test_min_max_experience_persist_and_update_is_checked_against_stored_value(ctx):
+def test_total_relevant_experience_persist_and_update_is_checked_against_stored_value(ctx):
     client, headers, db, user, created = ctx
-    jd = _create(client, headers, created, experience_years=3, experience_max_years=5)
+    jd = _create(client, headers, created, experience_years=5, relevant_experience_years=3)
     listed = _listed(client, headers, jd["id"])
-    assert (listed["experience_years"], listed["experience_max_years"]) == (3, 5)
-    res = client.put(f"/api/job-descriptions/{jd['id']}", json={"experience_max_years": 2}, headers=headers)
+    assert (listed["experience_years"], listed["relevant_experience_years"]) == (5, 3)
+    res = client.put(f"/api/job-descriptions/{jd['id']}", json={"relevant_experience_years": 7}, headers=headers)
     assert res.status_code == 422
-    assert _listed(client, headers, jd["id"])["experience_max_years"] == 5
+    assert _listed(client, headers, jd["id"])["relevant_experience_years"] == 3
 
 
 def test_history_records_create_update_status_delete_newest_first(ctx):
     client, headers, db, user, created = ctx
     jd = _create(client, headers, created, location="Pune")
     client.put(f"/api/job-descriptions/{jd['id']}", json={"location": "Mumbai", "experience_years": 4}, headers=headers)
-    cand = _candidate(db, user)  # a Fulfilled demand must name at least one existing resume
-    assert client.put(f"/api/job-descriptions/{jd['id']}/status", json={"status": "Fulfilled"}, headers=headers).status_code == 422
-    assert client.put(f"/api/job-descriptions/{jd['id']}/status", json={"status": "Fulfilled", "candidate_ids": [cand.id]}, headers=headers).json()["status"] == "Fulfilled"
+    cand = _candidate(db, user)  # a Filled demand must name at least one existing resume
+    assert client.put(f"/api/job-descriptions/{jd['id']}/status", json={"status": "Filled"}, headers=headers).status_code == 422
+    assert client.put(f"/api/job-descriptions/{jd['id']}/status", json={"status": "Filled", "candidate_ids": [cand.id]}, headers=headers).json()["status"] == "Filled"
     assert client.put(f"/api/job-descriptions/{jd['id']}/status", json={"status": "Draft"}, headers=headers).status_code == 400
     client.delete(f"/api/job-descriptions/{jd['id']}", headers=headers)
 
@@ -152,7 +153,7 @@ def test_history_records_create_update_status_delete_newest_first(ctx):
     assert [r["action"] for r in rows] == ["deleted", "status_changed", "updated", "created"]
     assert all(r["user_name"] == "History Tester" and r["item_display_id"] == jd["display_id"] for r in rows)
     status, updated = rows[1], rows[2]
-    assert status["changes"]["status"] == {"old": "Open", "new": "Fulfilled"}
+    assert status["changes"]["status"] == {"old": "Active", "new": "Filled"}
     assert updated["changes"]["location"] == {"old": "Pune", "new": "Mumbai"}
     assert updated["changes"]["experience_years"] == {"old": None, "new": 4.0}
     assert all(r["demand_display_id"] == "TRU-DM-01" and r["demand_name"] == "Java" for r in rows)  # Demand ID travels with every entry
@@ -166,17 +167,17 @@ def test_noop_save_and_same_status_log_nothing(ctx):
     client, headers, db, user, created = ctx
     jd = _create(client, headers, created)
     client.put(f"/api/job-descriptions/{jd['id']}", json={"title": jd["title"]}, headers=headers)
-    client.put(f"/api/job-descriptions/{jd['id']}/status", json={"status": "Open"}, headers=headers)
+    client.put(f"/api/job-descriptions/{jd['id']}/status", json={"status": "Active"}, headers=headers)
     assert [r["action"] for r in _history(client, headers, jd["id"])] == ["created"]
 
 
 def test_status_change_through_update_is_logged_and_clearing_a_field_works(ctx):
     client, headers, db, user, created = ctx
     jd = _create(client, headers, created, role="Lead")
-    client.put(f"/api/job-descriptions/{jd['id']}", json={"status": "Cancelled", "cancellation_reason": "On hold", "role": None}, headers=headers)
+    client.put(f"/api/job-descriptions/{jd['id']}", json={"status": "Non-Active", "cancellation_reason": "Budget freeze", "role": None}, headers=headers)
     acts = {r["action"]: r for r in _history(client, headers, jd["id"])}
-    assert acts["status_changed"]["changes"]["status"]["new"] == "Cancelled"
-    assert acts["status_changed"]["changes"]["cancellation_reason"]["new"] == "On hold"
+    assert acts["status_changed"]["changes"]["status"]["new"] == "Non-Active"
+    assert acts["status_changed"]["changes"]["cancellation_reason"]["new"] == "Budget freeze"
     assert acts["updated"]["changes"]["role"] == {"old": "Lead", "new": None}
 
 
@@ -197,10 +198,10 @@ def test_demands_expose_id_and_creator(ctx):
     assert all(d["created_by_name"] is None for d in demands)  # seeded by the system: no creator shown
 
 
-def test_meta_lists_only_the_five_jd_statuses(ctx):
+def test_meta_lists_only_the_four_jd_statuses(ctx):
     client, headers, *_ = ctx
     meta = client.get("/api/meta", headers=headers).json()
-    assert meta["jd_statuses"] == ["Open", "Cancelled", "Fulfilled", "Mapped"]
+    assert meta["jd_statuses"] == ["Active", "Non-Active", "On Hold", "Filled"]
     assert meta["notice_period_units"] == ["Days", "Weeks", "Months"]
 
 

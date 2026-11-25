@@ -140,7 +140,7 @@ def test_updating_a_demand_and_a_candidate_goes_through_confirmation(agent_env):
 
 def test_an_invalid_demand_edit_is_refused_at_proposal_time(agent_env):
     position = agent_env["db"].get(Position, agent_env["make_jd"]())
-    model = agent_env["install"](use(call("update_demand", demand=position.display_id, fields={"status": "Open"})), say("Cannot do that."))
+    model = agent_env["install"](use(call("update_demand", demand=position.display_id, fields={"status": "Active"})), say("Cannot do that."))
     body = ask(agent_env, "change the status through the edit tool").json()
     assert body["action"] != "confirm_action" and "Allowed fields" in _tool_result(model)
 

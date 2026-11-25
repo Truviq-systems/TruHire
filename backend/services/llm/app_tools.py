@@ -53,7 +53,7 @@ TOOLS: List[dict] = [
     _tool("delete_tracker_row", "PROPOSE deleting one tracker row. The user must confirm.", {"row_id": _STR}, ["row_id"]),
     _tool("update_demand", "PROPOSE editing a demand's details. Allowed fields: " + ", ".join(DEMAND_FIELDS) + ".",
           {"demand": _STR, "fields": _OBJ}, ["demand", "fields"]),
-    _tool("set_demand_status", "PROPOSE changing a demand's lifecycle status. Mapped and Fulfilled name the candidates it was filled with; Cancelled takes a reason.",
+    _tool("set_demand_status", "PROPOSE changing a demand's lifecycle status. Filled names the candidates it was filled with; Non-Active and On Hold take a reason.",
           {"demand": _STR, "status": {"type": "string", "enum": list(JD_STATUSES)}, "reason": _STR, "candidates": {"type": "array", "items": _STR}},
           ["demand", "status"]),
     _tool("set_candidate_status", "PROPOSE changing a candidate's overall recruitment status.",

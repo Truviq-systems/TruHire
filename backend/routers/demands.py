@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from backend.auth import get_current_user
 from backend.database import get_db
-from backend.models import INACTIVE_JD_STATUSES, DEFAULT_DEMAND_NAMES, canonical_demand_id, get_demand_display_id, Demand, Position, User
+from backend.models import DEFAULT_JD_STATUS, INACTIVE_JD_STATUSES, LEGACY_JD_STATUS_ALIASES, DEFAULT_DEMAND_NAMES, canonical_demand_id, get_demand_display_id, Demand, Position, User
 
 router = APIRouter(prefix="/api/demands", tags=["demands"])
 
@@ -70,8 +70,9 @@ def _is_default(demand: Demand) -> bool:
 
 
 def _active(db: Session):
-    """Positions that count toward a demand folder (status NULL on pre-status rows means Open)."""
-    return db.query(Position).filter(Position.demand_id.isnot(None), func.coalesce(Position.status, "Open").notin_(INACTIVE_JD_STATUSES))
+    """Positions that count toward a demand folder (status NULL on pre-status rows means Active)."""
+    inactive = tuple(INACTIVE_JD_STATUSES) + tuple(k for k, v in LEGACY_JD_STATUS_ALIASES.items() if v in INACTIVE_JD_STATUSES)
+    return db.query(Position).filter(Position.demand_id.isnot(None), func.coalesce(Position.status, DEFAULT_JD_STATUS).notin_(inactive))
 
 
 def _client_summary(positions) -> dict:
@@ -120,7 +121,7 @@ def get_demand(demand_id: str, db: Session = Depends(get_db), user: User = Depen
     demand = _get_demand(demand_id, db)
     jds = _jds_of(demand_id, db)
     creator = db.query(User.name).filter(User.id == demand.created_by).scalar() if demand.created_by else None
-    counted = [p for p in jds if (p.status or "Open") not in INACTIVE_JD_STATUSES]
+    counted = [p for p in jds if LEGACY_JD_STATUS_ALIASES.get(p.status or DEFAULT_JD_STATUS, p.status or DEFAULT_JD_STATUS) not in INACTIVE_JD_STATUSES]
     return {**_serialize(demand, len(counted), creator, _client_summary(counted)), "job_descriptions": [_serialize_jd(p) for p in jds]}
 
 

@@ -1,14 +1,18 @@
 """Client scoped search over saved, active job descriptions."""
 from sqlalchemy import func
 
-from backend.models import Position
+from backend.models import DEFAULT_JD_STATUS, INACTIVE_JD_STATUSES, LEGACY_JD_STATUS_ALIASES, Position
 from backend.services.retrieval.search import execute_candidate_search
+
+
+def _inactive_statuses():
+    return tuple(INACTIVE_JD_STATUSES) + tuple(k for k, v in LEGACY_JD_STATUS_ALIASES.items() if v in INACTIVE_JD_STATUSES)
 
 
 def list_client_names(db):
     rows = (db.query(func.min(Position.client_name))
             .filter(Position.client_name.isnot(None), func.trim(Position.client_name) != "")
-            .filter(func.coalesce(Position.status, "Open") != "Cancelled")
+            .filter(func.coalesce(Position.status, DEFAULT_JD_STATUS).notin_(_inactive_statuses()))
             .group_by(func.lower(func.trim(Position.client_name)))
             .order_by(func.lower(func.trim(Position.client_name))).all())
     return [row[0] for row in rows if row[0]]
@@ -21,7 +25,7 @@ def search_client_requirements(db, client_name, query_text, filter_skills=None,
     normalized = " ".join((client_name or "").split()).casefold()
     positions = (db.query(Position)
                  .filter(Position.client_name.isnot(None), func.lower(func.trim(Position.client_name)) == normalized)
-                 .filter(func.coalesce(Position.status, "Open") != "Cancelled"))
+                 .filter(func.coalesce(Position.status, DEFAULT_JD_STATUS).notin_(_inactive_statuses())))
     if demand_id:
         positions = positions.filter(Position.demand_id == demand_id)
     if position_id:

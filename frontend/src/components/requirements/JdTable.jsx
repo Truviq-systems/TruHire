@@ -11,7 +11,7 @@ export default function JdTable({ jds, loading, groupBy, practiceName, onOpen, o
   const [query, setQuery] = useState('');
   const shown = filterDemands(jds, query);
   const sections = groupBy ? groupRows(shown, groupBy, practiceName) : [{ key: 'all', label: null, items: shown }];
-  const columns = 14;
+  const columns = 15;
 
   return (
     <div className="stack">
@@ -42,8 +42,9 @@ export default function JdTable({ jds, loading, groupBy, practiceName, onOpen, o
                 <th scope="col">Experience</th>
                 <th scope="col" className="num">Positions</th>
                 <th scope="col">Status</th>
-                <th scope="col">Start Date</th>
-                <th scope="col">End Date</th>
+                <th scope="col">Requirement Received Date</th>
+                <th scope="col">Project Start Date</th>
+                <th scope="col">Project End Date</th>
                 <th scope="col">Created By</th>
                 <th scope="col">Created On</th>
                 <th scope="col">Last Modified</th>
@@ -65,9 +66,10 @@ export default function JdTable({ jds, loading, groupBy, practiceName, onOpen, o
                       <td className="nowrap">{practiceName(jd.demand_id) || '—'}</td>
                       <td>{jd.client_name || '—'}</td>
                       <td>{formatLocations(jd)}</td>
-                      <td className="nowrap">{formatExperience(jd.experience_years, jd.experience_max_years)}</td>
+                      <td className="nowrap">{formatExperience(jd.experience_years, jd.relevant_experience_years)}</td>
                       <td className="num">{formatPositions(jd.no_of_positions)}</td>
                       <td className="nowrap"><JdStatusBadge status={jd.status} /></td>
+                      <td className="nowrap">{formatDate(jd.requirement_received_date)}</td>
                       <td className="nowrap">{formatDate(jd.start_date)}</td>
                       <td className="nowrap">{formatDate(jd.end_date)}</td>
                       <td>{jd.created_by_name || '—'}</td>

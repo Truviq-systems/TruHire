@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from fastapi import HTTPException
 from sqlalchemy.orm import Session, joinedload
 
-from backend.models import (AVAILABILITY_STATUSES, INACTIVE_JD_STATUSES, LEGACY_JD_STATUS_ALIASES, REQUIREMENT_STATUSES, Candidate,
+from backend.models import (AVAILABILITY_STATUSES, DEFAULT_JD_STATUS, INACTIVE_JD_STATUSES, LEGACY_JD_STATUS_ALIASES, REQUIREMENT_STATUSES, Candidate,
                             CandidateActivity, Conversation, ConversationMessage, Position, User)
 from backend.services.candidates.directory import filter_directory
 from backend.services.candidates.history import requirement_rows
@@ -108,7 +108,7 @@ def _one_demand(db: Session, ref: Optional[str]) -> Tuple[Optional[Position], Op
 
 
 def _status(p: Position) -> str:
-    raw = p.status or "Open"
+    raw = p.status or DEFAULT_JD_STATUS
     return LEGACY_JD_STATUS_ALIASES.get(raw, raw)
 
 
@@ -116,7 +116,8 @@ def _demand_row(p: Position) -> dict:
     row = {"id": p.id, "display_id": p.display_id, "title": p.title, "client_name": p.client_name,
            "practice": p.demand.name if p.demand else None, "status": _status(p), "no_of_positions": p.no_of_positions,
            "locations": p.locations or ([p.location] if p.location else None), "experience_years": p.experience_years,
-           "experience_max_years": p.experience_max_years, "start_date": p.start_date, "end_date": p.end_date,
+           "relevant_experience_years": p.relevant_experience_years, "requirement_received_date": p.requirement_received_date,
+           "start_date": p.start_date, "end_date": p.end_date,
            "demand_owner": p.demand_owner}
     return {k: v for k, v in row.items() if v not in (None, "", [])}
 
@@ -202,7 +203,7 @@ TOOLS: List[dict] = [
     _tool("get_candidate_history", "Where a candidate was submitted (client - status), their availability and the recorded notes.",
           {"candidate": {**_STR, "description": "name, email, phone, company or TRU-CN id"}}, ["candidate"]),
     _tool("compare_candidates", "Side-by-side profile of 2 or 3 candidates.", {"candidates": {"type": "array", "items": _STR}}, ["candidates"]),
-    _tool("list_demands", "List saved demands/requirements, optionally filtered by client, practice or status (Open, Mapped, Fulfilled, Cancelled). "
+    _tool("list_demands", "List saved demands/requirements, optionally filtered by client, practice or status (Active, Non-Active, On Hold, Filled). "
           "Includes the number of open positions.", {"client": _STR, "practice": _STR, "status": _STR, "limit": {"type": "integer"}}),
     _tool("get_demand", "Details of one demand, including no_of_positions (open positions). Use the DM-0001 id or title words.",
           {"demand": {**_STR, "description": "DM- id, or title/client words"}}, ["demand"]),

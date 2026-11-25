@@ -85,10 +85,10 @@ def _java_folder(h):
 
 
 def _cancel(h, jd_id, reason="Client withdrew the demand"):
-    return client.put(f"/api/job-descriptions/{jd_id}/status", json={"status": "Cancelled", "cancellation_reason": reason}, headers=h)
+    return client.put(f"/api/job-descriptions/{jd_id}/status", json={"status": "Non-Active", "cancellation_reason": reason}, headers=h)
 
 
-def test_cancelled_demands_are_not_counted_but_kept(made):
+def test_non_active_demands_are_not_counted_but_kept(made):
     h, make = made
     base = _java_folder(h)["jd_count"]
     a, b, c = make(), make(), make()
@@ -99,12 +99,12 @@ def test_cancelled_demands_are_not_counted_but_kept(made):
     # The records are still there, under the folder and by id.
     listed = {d["id"] for d in client.get(f"/api/demands/{JAVA}/job-descriptions", headers=h).json()}
     assert {a["id"], b["id"], c["id"]} <= listed
-    assert client.get(f"/api/job-descriptions/{b['id']}", headers=h).json()["status"] == "Cancelled"
-    # Reopening counts it again.
-    client.put(f"/api/job-descriptions/{b['id']}/status", json={"status": "Open"}, headers=h)
+    assert client.get(f"/api/job-descriptions/{b['id']}", headers=h).json()["status"] == "Non-Active"
+    # Reactivating counts it again.
+    client.put(f"/api/job-descriptions/{b['id']}/status", json={"status": "Active"}, headers=h)
     assert _java_folder(h)["jd_count"] == base + 2
-    # Mapped and Fulfilled are live work and are counted.
-    assert _map(h, a["id"], "Mapped", [resume_id()]).status_code == 200
+    # Filled and On Hold are counted.
+    assert _map(h, a["id"], "Filled", [resume_id()]).status_code == 200
     assert _java_folder(h)["jd_count"] == base + 2
 
 
@@ -174,83 +174,91 @@ def test_tentative_end_date_can_be_changed_and_cleared(made):
     assert client.put(f"/api/job-descriptions/{jd['id']}", json={"end_date": "2025-01-01"}, headers=h).status_code == 422
 
 
-def test_map_is_now_mapped_and_old_value_is_still_understood(made):
+def test_legacy_statuses_map_and_old_values_are_accepted(made):
     h, make = made
     meta = client.get("/api/meta", headers=h).json()
-    assert "Mapped" in meta["jd_statuses"] and "Map" not in meta["jd_statuses"]
+    assert meta["jd_statuses"] == ["Active", "Non-Active", "On Hold", "Filled"]
     rid = resume_id()
-    jd = make(status="Mapped", candidate_ids=[rid])
-    assert jd["status"] == "Mapped"
-    # Old clients that still send "Map" are accepted and stored as Mapped.
+    jd = make(status="Filled", candidate_ids=[rid])
+    assert jd["status"] == "Filled"
+    # Old clients that still send "Open" / "Map" / "Mapped" / "Fulfilled" are accepted and normalized.
     r = client.put(f"/api/job-descriptions/{jd['id']}/status", json={"status": "Open"}, headers=h)
+    assert r.status_code == 200 and r.json()["status"] == "Active"
     r = client.put(f"/api/job-descriptions/{jd['id']}/status", json={"status": "Map", "candidate_ids": [rid]}, headers=h)
-    assert r.status_code == 200 and r.json()["status"] == "Mapped"
-    assert make(status="Map", candidate_ids=[rid])["status"] == "Mapped"
+    assert r.status_code == 200 and r.json()["status"] == "Filled"
+    assert make(status="Mapped", candidate_ids=[rid])["status"] == "Filled"
     assert client.put(f"/api/job-descriptions/{jd['id']}/status", json={"status": "Nope"}, headers=h).status_code == 400
 
 
-def test_existing_map_rows_are_migrated_to_mapped(made):
+def test_existing_legacy_status_rows_are_migrated(made):
     h, make = made
-    jd = make()
+    jd_map = make()
+    jd_open = make()
     with engine.begin() as c:
-        c.execute(text("UPDATE positions SET status = 'Map' WHERE id = :i"), {"i": jd["id"]})
+        c.execute(text("UPDATE positions SET status = 'Map' WHERE id = :i"), {"i": jd_map["id"]})
+        c.execute(text("UPDATE positions SET status = 'Open' WHERE id = :i"), {"i": jd_open["id"]})
     ensure_schema()
     with engine.connect() as c:
-        assert c.execute(text("SELECT status FROM positions WHERE id = :i"), {"i": jd["id"]}).scalar() == "Mapped"
+        assert c.execute(text("SELECT status FROM positions WHERE id = :i"), {"i": jd_map["id"]}).scalar() == "Filled"
+        assert c.execute(text("SELECT status FROM positions WHERE id = :i"), {"i": jd_open["id"]}).scalar() == "Active"
 
 
-def test_cancelling_needs_a_reason_which_is_kept_and_shown_only_while_cancelled(made):
+def test_non_active_and_on_hold_need_a_reason_which_is_kept_until_active(made):
     h, make = made
     jd = make()
     url = f"/api/job-descriptions/{jd['id']}/status"
-    assert client.put(url, json={"status": "Cancelled"}, headers=h).status_code == 422
-    assert client.put(url, json={"status": "Cancelled", "cancellation_reason": "   "}, headers=h).status_code == 422
-    assert client.get(f"/api/job-descriptions/{jd['id']}", headers=h).json()["status"] == "Open"  # nothing half-saved
+    assert client.put(url, json={"status": "Non-Active"}, headers=h).status_code == 422
+    assert client.put(url, json={"status": "Non-Active", "cancellation_reason": "   "}, headers=h).status_code == 422
+    assert client.put(url, json={"status": "On Hold"}, headers=h).status_code == 422
+    assert client.get(f"/api/job-descriptions/{jd['id']}", headers=h).json()["status"] == "Active"  # nothing half-saved
     r = _cancel(h, jd["id"], "  Budget frozen  ")
     assert r.status_code == 200 and r.json()["cancellation_reason"] == "Budget frozen"
     listed = next(p for p in client.get("/api/job-descriptions", headers=h).json() if p["id"] == jd["id"])
-    assert listed["status"] == "Cancelled" and listed["cancellation_reason"] == "Budget frozen"  # persisted, survives a reload
+    assert listed["status"] == "Non-Active" and listed["cancellation_reason"] == "Budget frozen"  # persisted, survives a reload
+    # On Hold also requires and saves a reason.
+    r_hold = client.put(url, json={"status": "On Hold", "cancellation_reason": "Awaiting client sign-off"}, headers=h)
+    assert r_hold.status_code == 200 and r_hold.json()["status"] == "On Hold" and r_hold.json()["cancellation_reason"] == "Awaiting client sign-off"
     # The same through the edit form (PUT) and in the history log.
     other = make()
-    assert client.put(f"/api/job-descriptions/{other['id']}", json={"status": "Cancelled"}, headers=h).status_code == 422
-    r = client.put(f"/api/job-descriptions/{other['id']}", json={"status": "Cancelled", "cancellation_reason": "Role merged"}, headers=h)
+    assert client.put(f"/api/job-descriptions/{other['id']}", json={"status": "Non-Active"}, headers=h).status_code == 422
+    r = client.put(f"/api/job-descriptions/{other['id']}", json={"status": "Non-Active", "cancellation_reason": "Role merged"}, headers=h)
     assert r.status_code == 200 and r.json()["cancellation_reason"] == "Role merged"
     history = client.get("/api/requirement-history", params={"action": "status_changed", "limit": 200}, headers=h).json()["items"]
     entry = next(e for e in history if e["item_id"] == other["id"])
     assert entry["changes"]["cancellation_reason"]["new"] == "Role merged"
-    # Reopening clears it.
-    r = client.put(f"/api/job-descriptions/{jd['id']}/status", json={"status": "Open"}, headers=h)
-    assert r.json()["status"] == "Open" and r.json()["cancellation_reason"] is None
+    # Returning to Active clears it.
+    r = client.put(f"/api/job-descriptions/{jd['id']}/status", json={"status": "Active"}, headers=h)
+    assert r.json()["status"] == "Active" and r.json()["cancellation_reason"] is None
 
 
-def test_mapped_and_fulfilled_need_resumes_which_are_listed_and_persist(made):
+def test_filled_needs_resumes_which_are_listed_and_persist(made):
     h, make = made
     jd = make()
     a, b = resume_id("Asha Rao"), resume_id("Vikram Shah")
-    assert _map(h, jd["id"], "Mapped", []).status_code == 422
-    assert client.put(f"/api/job-descriptions/{jd['id']}/status", json={"status": "Fulfilled"}, headers=h).status_code == 422
-    assert _map(h, jd["id"], "Mapped", [a, "no-such-resume"]).status_code == 422
+    assert _map(h, jd["id"], "Filled", []).status_code == 422
+    assert client.put(f"/api/job-descriptions/{jd['id']}/status", json={"status": "Filled"}, headers=h).status_code == 422
+    assert _map(h, jd["id"], "Filled", [a, "no-such-resume"]).status_code == 422
     assert client.get(f"/api/job-descriptions/{jd['id']}", headers=h).json()["mapped_resumes"] == []
-    r = _map(h, jd["id"], "Mapped", [a, b, a])  # duplicates collapse
+    r = _map(h, jd["id"], "Filled", [a, b, a])  # duplicates collapse
     assert r.status_code == 200
     assert sorted(x["candidate_name"] for x in r.json()["mapped_resumes"]) == ["Asha Rao", "Vikram Shah"]
     assert all(x["display_id"] and x["id"] for x in r.json()["mapped_resumes"])
     listed = next(p for p in client.get("/api/job-descriptions", headers=h).json() if p["id"] == jd["id"])
     assert {x["id"] for x in listed["mapped_resumes"]} == {a, b}
-    # Mapped -> Fulfilled keeps the resumes unless new ones are sent.
-    r = client.put(f"/api/job-descriptions/{jd['id']}/status", json={"status": "Fulfilled"}, headers=h)
+    # Updating status to Filled again keeps the resumes unless new ones are sent.
+    r = client.put(f"/api/job-descriptions/{jd['id']}/status", json={"status": "Filled"}, headers=h)
     assert r.status_code == 200 and {x["id"] for x in r.json()["mapped_resumes"]} == {a, b}
-    r = _map(h, jd["id"], "Fulfilled", [b])
+    r = _map(h, jd["id"], "Filled", [b])
     assert [x["id"] for x in r.json()["mapped_resumes"]] == [b]
     # Another status drops them.
-    assert client.put(f"/api/job-descriptions/{jd['id']}/status", json={"status": "Open"}, headers=h).json()["mapped_resumes"] == []
+    assert client.put(f"/api/job-descriptions/{jd['id']}/status", json={"status": "Active"}, headers=h).json()["mapped_resumes"] == []
 
 
 def test_a_resume_deleted_after_mapping_does_not_break_the_demand(made):
     h, make = made
     jd = make()
     a, b = resume_id("Stays"), resume_id("Goes")
-    _map(h, jd["id"], "Mapped", [a, b])
+    _map(h, jd["id"], "Filled", [a, b])
     db = SessionLocal()
     try:
         db.query(Candidate).filter(Candidate.id == b).delete()
@@ -276,16 +284,17 @@ def test_saving_a_demand_records_who_modified_it_and_when(made):
     assert again["updated_at"] == r["updated_at"]
 
 
-def test_closed_no_longer_exists_and_old_closed_rows_become_cancelled(made):
+def test_closed_no_longer_exists_and_old_closed_rows_become_non_active(made):
     h, make = made
     meta = client.get("/api/meta", headers=h).json()
-    assert meta["jd_statuses"] == ["Open", "Cancelled", "Fulfilled", "Mapped"] and meta["resume_linked_jd_statuses"] == ["Mapped", "Fulfilled"]
+    assert meta["jd_statuses"] == ["Active", "Non-Active", "On Hold", "Filled"] and meta["resume_linked_jd_statuses"] == ["Filled"]
+    assert meta["reason_required_jd_statuses"] == ["Non-Active", "On Hold"]
     jd = make()
     with engine.begin() as c:
         c.execute(text("UPDATE positions SET status = 'Closed' WHERE id = :i"), {"i": jd["id"]})
     ensure_schema()
     got = client.get(f"/api/job-descriptions/{jd['id']}", headers=h).json()
-    assert got["status"] == "Cancelled" and got["cancellation_reason"] is None  # no reason was ever recorded: handled, not an error
+    assert got["status"] == "Non-Active" and got["cancellation_reason"] is None  # no reason was ever recorded: handled, not an error
 
 
 def test_resume_search_by_id_or_name_for_the_mapping_popup(made):

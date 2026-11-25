@@ -210,7 +210,7 @@ export default function JobDescriptionsPage() {
           </>
         ) : byClient && !r.clientName ? (
           <>
-            <div className="section-head"><h2>Clients <span className="slug">{plural(r.jds.filter((item) => item.status !== 'Cancelled').length)}</span></h2><button type="button" className="btn btn-primary" onClick={create}>New demand</button></div>
+            <div className="section-head"><h2>Clients <span className="slug">{plural(r.jds.filter((item) => item.status !== 'Non-Active' && item.status !== 'Cancelled').length)}</span></h2><button type="button" className="btn btn-primary" onClick={create}>New demand</button></div>
             <ClientCards jds={r.jds} loading={r.loading} onCreate={create} label="Clients" emptyText="No demands yet." onOpen={(name) => r.setClient(name || UNASSIGNED_CLIENT)} />
           </>
         ) : demand && !r.clientName && r.visibleJds.length > 0 ? (
@@ -223,7 +223,7 @@ export default function JobDescriptionsPage() {
             {(demand || r.clientName) && (
               <div className="section-head">
                 <h2>{r.clientName ? clientLabel : demand.name}
-                  <span className="slug">{r.clientName ? ` · ${plural(clientJds.length)}` : ` · ${plural(demand.jd_count)}${r.visibleJds.length > demand.jd_count ? ` · ${r.visibleJds.length} including cancelled` : ''}`}</span>
+                  <span className="slug">{r.clientName ? ` · ${plural(clientJds.length)}` : ` · ${plural(demand.jd_count)}${r.visibleJds.length > demand.jd_count ? ` · ${r.visibleJds.length} including non-active` : ''}`}</span>
                 </h2>
               </div>
             )}

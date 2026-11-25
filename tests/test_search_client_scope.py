@@ -3,7 +3,7 @@ from uuid import uuid4
 from test_location_role_filters import env, retrieval, _hits
 
 
-def _create_jd(env, tag, client, status="Open"):
+def _create_jd(env, tag, client, status="Active"):
     position_id = env["make_jd"]("Python engineer with API and database experience.", f"{tag} Engineer")
     position = env["db"].get(Position, position_id)
     position.client_name = client
@@ -12,12 +12,12 @@ def _create_jd(env, tag, client, status="Open"):
     return position_id
 
 
-def test_client_search_groups_candidates_under_each_non_cancelled_jd(env, retrieval):
+def test_client_search_groups_candidates_under_each_active_jd(env, retrieval):
     a, b = env["make"](), env["make"]()
     client = f"Acme {uuid4().hex}"
     open_one = _create_jd(env, "Client A", client)
     open_two = _create_jd(env, "Client B", client.upper())
-    cancelled = _create_jd(env, "Closed", client, "Cancelled")
+    inactive = _create_jd(env, "Closed", client, "Non-Active")
     retrieval["vector"], retrieval["lexical"] = _hits(a, b), _hits(b, a)
 
     response = env["client"].post("/api/search", headers=env["headers"], json={"client_name": f"  {client.lower()} ", "query": "python"})
@@ -26,13 +26,13 @@ def test_client_search_groups_candidates_under_each_non_cancelled_jd(env, retrie
     assert response.status_code == 200
     assert [group["position"]["id"] for group in body["client_groups"]] == [open_two, open_one]
     assert all({item["candidate"]["id"] for item in group["results"]} == {a, b} for group in body["client_groups"])
-    assert cancelled not in [group["position"]["id"] for group in body["client_groups"]]
+    assert inactive not in [group["position"]["id"] for group in body["client_groups"]]
 
 
-def test_search_clients_lists_only_saved_non_cancelled_client_names(env):
+def test_search_clients_lists_only_saved_active_client_names(env):
     client = f"Acme {uuid4().hex}"
-    _create_jd(env, "Open", client)
-    _create_jd(env, "Closed", f"Old {uuid4().hex}", "Cancelled")
+    _create_jd(env, "Active", client)
+    _create_jd(env, "Closed", f"Old {uuid4().hex}", "Non-Active")
 
     response = env["client"].get("/api/search/clients", headers=env["headers"])
 

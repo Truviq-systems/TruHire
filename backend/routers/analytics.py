@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from backend.config import settings
 from backend.database import get_db
-from backend.models import (CANDIDATE_STATUSES, LEGACY_JD_STATUS_ALIASES, REQUIREMENT_STATUSES, Candidate, CandidateMatch, IngestionBatch, Position,
+from backend.models import (CANDIDATE_STATUSES, DEFAULT_JD_STATUS, LEGACY_JD_STATUS_ALIASES, REQUIREMENT_STATUSES, Candidate, CandidateMatch, IngestionBatch, Position,
                             RequirementCandidateStatus, User)
 from backend.auth import get_current_user
 from backend.services.common.cache import get_cache, set_cache, get_data_epoch
@@ -161,7 +161,7 @@ def get_requirements_report(db: Session = Depends(get_db), user: User = Depends(
         rows.append({
             "id": pos.id, "display_id": pos.display_id, "title": pos.title, "client_name": pos.client_name,
             "practice": pos.demand.name if pos.demand else None,
-            "status": LEGACY_JD_STATUS_ALIASES.get(pos.status or "Open", pos.status or "Open"),
+            "status": LEGACY_JD_STATUS_ALIASES.get(pos.status or DEFAULT_JD_STATUS, pos.status or DEFAULT_JD_STATUS),
             "no_of_positions": pos.no_of_positions or 1,
             "created_at": pos.created_at.isoformat() if pos.created_at else None,
             # Last modification: the closest recorded moment a demand became Fulfilled or Cancelled.

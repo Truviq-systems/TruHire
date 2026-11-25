@@ -40,8 +40,8 @@ function EndDate({ jd, onSave }) {
   }
   return (
     <span className="cluster cluster-tight">
-      <input type="date" className="input-field end-date-input" value={value} min={jd.start_date || undefined} onChange={(e) => setValue(e.target.value)} aria-label="Tentative end date" />
-      <button type="button" className="icon-btn" disabled={busy || !value} onClick={() => save(value)} aria-label="Save end date"><Check size={14} /></button>
+      <input type="date" className="input-field end-date-input" value={value} min={jd.start_date || undefined} onChange={(e) => setValue(e.target.value)} aria-label="Project end date" />
+      <button type="button" className="icon-btn" disabled={busy || !value} onClick={() => save(value)} aria-label="Save project end date"><Check size={14} /></button>
       <button type="button" className="icon-btn" disabled={busy} onClick={() => setEditing(false)} aria-label="Cancel"><X size={14} /></button>
     </span>
   );
@@ -53,7 +53,7 @@ export default function JdDetails({ jd, demandName, matches, onStatus, onEdit, o
       <div className="detail-toolbar">
         <div className="match-status">
           <span className="input-label jd-status-label">Demand Status</span>
-          <StatusSelect className="input-field match-status-select" ariaLabel="Demand status" value={jd.status || 'Open'}
+          <StatusSelect className="input-field match-status-select" ariaLabel="Demand status" value={jd.status || 'Active'}
             reason={jd.cancellation_reason || ''} resumes={jd.mapped_resumes || []} matches={matches}
             onChange={(status, extras) => onStatus(status, extras)} />
           <StatusNote jd={jd} />
@@ -73,12 +73,13 @@ export default function JdDetails({ jd, demandName, matches, onStatus, onEdit, o
           ['Current Status', jd.current_status || '—'],
           showRole(jd) && ['Role', jd.role],
           ['Locations', formatLocations(jd)],
-          ['Experience', formatExperience(jd.experience_years, jd.experience_max_years)],
+          ['Experience', formatExperience(jd.experience_years, jd.relevant_experience_years)],
           ['No. of Positions', formatPositions(jd.no_of_positions)],
         ]} />
         <Group title="Schedule" rows={[
-          ['Start Date', formatDate(jd.start_date)],
-          ['End Date (tentative)', <EndDate key="end" jd={jd} onSave={onEndDate} />],
+          ['Requirement Received Date', formatDate(jd.requirement_received_date)],
+          ['Project Start Date', formatDate(jd.start_date)],
+          ['Project End Date', <EndDate key="end" jd={jd} onSave={onEndDate} />],
         ]} />
         <Group title="Record" rows={[
           ['Created By', jd.created_by_name || '—'],

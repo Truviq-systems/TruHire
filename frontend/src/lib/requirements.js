@@ -10,6 +10,7 @@ export const DEMAND_OWNERS = Object.freeze([
   'Akshitha Margani',
   'Anurag Bohini',
   'Chandra Teja Allamsetty',
+  'Guru Prasad Bapana',
   'Manvitha Kamuni',
   'Rama Devi Badhri',
   'Swathi Priya Nadindla',
@@ -34,15 +35,15 @@ export function formatDateTime(value) {
 const blank = (v) => v === null || v === undefined || v === '';
 
 // "3-5 yrs", "3+ yrs", "up to 5 yrs", "4 yrs" (min equals max) or "—".
-export function formatExperience(min, max) {
-  const lo = blank(min) ? null : Number(min);
-  const hi = blank(max) ? null : Number(max);
-  const okLo = lo !== null && Number.isFinite(lo);
-  const okHi = hi !== null && Number.isFinite(hi);
+export function formatExperience(total, relevant) {
+  const tot = blank(total) ? null : Number(total);
+  const rel = blank(relevant) ? null : Number(relevant);
+  const okTot = tot !== null && Number.isFinite(tot);
+  const okRel = rel !== null && Number.isFinite(rel);
   const unit = (n) => (n === 1 ? 'yr' : 'yrs');
-  if (okLo && okHi) return lo === hi ? `${lo} ${unit(lo)}` : `${lo}-${hi} yrs`;
-  if (okLo) return `${lo}+ ${unit(lo)}`;
-  if (okHi) return `up to ${hi} ${unit(hi)}`;
+  if (okTot && okRel) return `${tot} ${unit(tot)} (${rel} ${unit(rel)} rel.)`;
+  if (okTot) return `${tot} ${unit(tot)} total`;
+  if (okRel) return `${rel} ${unit(rel)} rel.`;
   return '—';
 }
 
@@ -55,16 +56,18 @@ export const formatPositions = (n) => (n === null || n === undefined || n === ''
 const squash = (v) => (v || '').toLowerCase().replace(/\s+/g, ' ').trim();
 export const showRole = (jd) => !!squash(jd?.role) && squash(jd.role) !== squash(jd.title);
 
-// Statuses that carry extra data: a Cancelled demand its reason, a Mapped / Fulfilled one its resumes.
-export const CANCELLED = 'Cancelled';
-export const RESUME_LINKED = ['Mapped', 'Fulfilled'];
+// Statuses that carry extra data: Non-Active / On Hold ask for a reason, Filled asks for candidate resume(s).
+export const NON_ACTIVE = 'Non-Active';
+export const CANCELLED = NON_ACTIVE;
+export const REASON_REQUIRED = ['Non-Active', 'On Hold'];
+export const RESUME_LINKED = ['Filled'];
 
 // Form values -> API payload. Blank means "not stated" (null), so clearing a field is expressible.
 // The reason / resume ids are only sent with the status that needs them.
-export function detailsPayload({ demandId, locations, clientName, demandOwner, currentStatus, experience, experienceMax, noOfPositions, startDate, endDate, status, cancellationReason, candidateIds }) {
+export function detailsPayload({ demandId, locations, clientName, demandOwner, currentStatus, experience, relevantExperience, noOfPositions, requirementReceivedDate, startDate, endDate, status, cancellationReason, candidateIds }) {
   const text = (v) => (v || '').trim() || null;
   return {
-    ...(status === CANCELLED ? { cancellation_reason: text(cancellationReason) } : {}),
+    ...(REASON_REQUIRED.includes(status) ? { cancellation_reason: text(cancellationReason) } : {}),
     ...(RESUME_LINKED.includes(status) ? { candidate_ids: candidateIds || [] } : {}),
     ...(demandId ? { demand_id: demandId } : {}),
     locations: (locations || []).map((p) => (p || '').trim()).filter(Boolean),
@@ -73,7 +76,8 @@ export function detailsPayload({ demandId, locations, clientName, demandOwner, c
     demand_owner: text(demandOwner),
     current_status: text(currentStatus),
     experience_years: blank(experience) ? null : Number(experience),
-    experience_max_years: blank(experienceMax) ? null : Number(experienceMax),
+    relevant_experience_years: blank(relevantExperience) ? null : Number(relevantExperience),
+    requirement_received_date: requirementReceivedDate || null,
     start_date: startDate || null,
     end_date: endDate || null,
     status,
@@ -81,19 +85,19 @@ export function detailsPayload({ demandId, locations, clientName, demandOwner, c
 }
 
 // Error message for unacceptable form values, or null.
-export function validateDetails({ experience, experienceMax, noOfPositions, locations, startDate, endDate }) {
+export function validateDetails({ experience, relevantExperience, noOfPositions, locations, startDate, endDate }) {
   if ((locations || []).length > MAX_LOCATIONS) return `Add at most ${MAX_LOCATIONS} locations.`;
   if (!blank(noOfPositions)) {
     const n = Number(noOfPositions);
     if (!Number.isInteger(n) || n < 0 || n > MAX_POSITIONS) return `No. of positions must be a whole number from 0 to ${MAX_POSITIONS}.`;
   }
-  for (const [label, value] of [['Min experience', experience], ['Max experience', experienceMax]]) {
+  for (const [label, value] of [['Total experience', experience], ['Relevant experience', relevantExperience]]) {
     if (blank(value)) continue;
     const n = Number(value);
     if (!Number.isFinite(n) || n < 0 || n > MAX_EXPERIENCE_YEARS) return `${label} must be a number from 0 to ${MAX_EXPERIENCE_YEARS} years.`;
   }
-  if (!blank(experience) && !blank(experienceMax) && Number(experienceMax) < Number(experience)) return 'Max experience cannot be less than min experience.';
-  if (startDate && endDate && endDate < startDate) return 'End date cannot be before the start date.';
+  if (!blank(experience) && !blank(relevantExperience) && Number(relevantExperience) > Number(experience)) return 'Relevant experience cannot exceed total experience.';
+  if (startDate && endDate && endDate < startDate) return 'Project end date cannot be before project start date.';
   return null;
 }
 
@@ -110,9 +114,9 @@ export const HISTORY_ACTION_LABELS = Object.freeze({
 });
 
 const FIELD_LABELS = {
-  title: 'Title', jd_text: 'Specification', role: 'Role', experience_years: 'Min experience (yrs)', experience_max_years: 'Max experience (yrs)', no_of_positions: 'No. of positions', work_mode: 'Work mode', start_date: 'Start date',
-  end_date: 'End date', location: 'Location', client_name: 'Client', demand_owner: 'Demand owner', current_status: 'Current status', status: 'Demand status', demand: 'Practice', reason: 'Reason',
-  cancellation_reason: 'Cancellation reason', mapped_resumes: 'Resumes',
+  title: 'Title', jd_text: 'Specification', role: 'Role', experience_years: 'Total experience (yrs)', relevant_experience_years: 'Relevant experience (yrs)', no_of_positions: 'No. of positions', work_mode: 'Work mode', requirement_received_date: 'Requirement received date', start_date: 'Project start date',
+  end_date: 'Project end date', location: 'Location', client_name: 'Client', demand_owner: 'Demand owner', current_status: 'Current status', status: 'Demand status', demand: 'Practice', reason: 'Reason',
+  cancellation_reason: 'Status reason', mapped_resumes: 'Resumes',
 };
 const show = (v) => (v === null || v === undefined || v === '' ? 'empty' : String(v));
 const historyValue = (key, value) => {
@@ -134,8 +138,8 @@ export function historyChanges(entry) {
 
 // Folder order: open demands first, then mapped and fulfilled (still live work), then cancelled.
 // Newest first within a status; the sort is stable, so ties keep API order.
-const STATUS_RANK = { Open: 0, Mapped: 1, Map: 1, Fulfilled: 2, Cancelled: 4 };
-export const statusRank = (status) => STATUS_RANK[status || 'Open'] ?? 2;
+const STATUS_RANK = { Active: 0, 'On Hold': 1, Filled: 2, 'Non-Active': 4, Open: 0, Mapped: 1, Map: 1, Fulfilled: 2, Cancelled: 4 };
+export const statusRank = (status) => STATUS_RANK[status || 'Active'] ?? 2;
 export function sortByStatus(items) {
   const time = (j) => Date.parse(j.created_at) || 0;
   return [...items].sort((a, b) => statusRank(a.status) - statusRank(b.status) || time(b) - time(a));
@@ -168,7 +172,7 @@ export function groupByClient(jds) {
     if (!groups.has(key)) groups.set(key, { name: clientKey(jd), items: [], cancelled: 0, positions: 0, practices: new Map() });
     const group = groups.get(key);
     group.items.push(jd);
-    if (jd.status === CANCELLED) group.cancelled += 1;
+    if (jd.status === NON_ACTIVE || jd.status === 'Cancelled') group.cancelled += 1;
     else {
       const n = Number(jd.no_of_positions) || 0;
       group.positions += n;

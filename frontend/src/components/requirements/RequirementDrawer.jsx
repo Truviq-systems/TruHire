@@ -154,11 +154,17 @@ export default function RequirementDrawer({ jd, matches = [], loading = false, o
               </div>
               <div className="drawer-fact">
                 <dt>Experience</dt>
-                <dd>{formatExperience(jd.experience_years, jd.experience_max_years)}</dd>
+                <dd>{formatExperience(jd.experience_years, jd.relevant_experience_years)}</dd>
               </div>
+              {jd.requirement_received_date && (
+                <div className="drawer-fact">
+                  <dt><Calendar size={13} /> Requirement Received</dt>
+                  <dd>{formatDate(jd.requirement_received_date)}</dd>
+                </div>
+              )}
               {(jd.start_date || jd.end_date) && (
                 <div className="drawer-fact">
-                  <dt><Calendar size={13} /> Timeline</dt>
+                  <dt><Calendar size={13} /> Project Timeline</dt>
                   <dd>
                     {jd.start_date ? formatDate(jd.start_date) : 'Start TBD'}
                     {jd.end_date ? ` to ${formatDate(jd.end_date)}` : ''}

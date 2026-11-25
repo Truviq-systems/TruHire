@@ -26,6 +26,9 @@ def test_meta_serves_the_report_tracker_and_ingestion_settings_the_ui_used_to_re
     # report rules: which demand statuses are excluded / fulfilled, and which review stages mean progress
     assert body["inactive_jd_statuses"] == list(models.INACTIVE_JD_STATUSES)
     assert body["fulfilled_jd_statuses"] == list(models.FULFILLED_JD_STATUSES)
+    assert body["reason_required_jd_statuses"] == list(models.REASON_REQUIRED_JD_STATUSES)
+    assert body["default_jd_status"] == models.DEFAULT_JD_STATUS == "Active"
+    assert body["jd_statuses"] == ["Active", "Non-Active", "On Hold", "Filled"]
     assert body["progressed_requirement_statuses"] == list(models.PROGRESSED_REQUIREMENT_STATUSES)
     assert set(body["progressed_requirement_statuses"]) <= set(body["requirement_statuses"])
     assert set(body["inactive_jd_statuses"] + body["fulfilled_jd_statuses"]) <= set(body["jd_statuses"])

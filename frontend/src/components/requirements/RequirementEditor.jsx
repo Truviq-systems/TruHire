@@ -9,7 +9,7 @@ import './requirements.css';
 
 // Create or edit one requirement: title, specification text and an optional source file (text is extracted).
 // Detail fields as form strings; the same shape is used to detect what the user actually changed.
-// A copy (`template`) starts from the copied demand's details but is always a fresh Open demand.
+// A copy (`template`) starts from the copied demand's details but is always a fresh Active demand.
 // A new demand started inside a practice folder defaults to that practice; from the landing grid it stays unselected.
 const initialDetails = (jd, creating, defaultStatus, template, defaultDemandId) => {
   const src = creating ? template : jd;
@@ -21,8 +21,9 @@ const initialDetails = (jd, creating, defaultStatus, template, defaultDemandId) 
     // A copy is a new demand: the source's "where it stands" note does not carry over.
     currentStatus: creating ? '' : src?.current_status || '',
     experience: src?.experience_years == null ? '' : String(src.experience_years),
-    experienceMax: src?.experience_max_years == null ? '' : String(src.experience_max_years),
+    relevantExperience: src?.relevant_experience_years == null ? '' : String(src.relevant_experience_years),
     noOfPositions: creating && !template ? '1' : src?.no_of_positions == null ? '' : String(src.no_of_positions),
+    requirementReceivedDate: src?.requirement_received_date || '',
     startDate: src?.start_date || '',
     endDate: src?.end_date || '',
     status: creating ? defaultStatus : jd?.status || defaultStatus,
@@ -189,12 +190,12 @@ export default function RequirementEditor({ jd, creating, matches, template = nu
           )}
         </div>
         <div>
-          <label className="input-label" htmlFor="req-exp">Min Experience (years)</label>
+          <label className="input-label" htmlFor="req-exp">Total Experience (years)</label>
           <input id="req-exp" className="input-field" type="number" min="0" step="0.5" value={details.experience} onChange={setField('experience')} />
         </div>
         <div>
-          <label className="input-label" htmlFor="req-exp-max">Max Experience (years)</label>
-          <input id="req-exp-max" className="input-field" type="number" min="0" step="0.5" value={details.experienceMax} onChange={setField('experienceMax')} />
+          <label className="input-label" htmlFor="req-exp-rel">Relevant Experience (years)</label>
+          <input id="req-exp-rel" className="input-field" type="number" min="0" step="0.5" value={details.relevantExperience} onChange={setField('relevantExperience')} />
         </div>
         <div>
           <label className="input-label" htmlFor="req-location">Locations <span className="slug">(up to {MAX_LOCATIONS})</span></label>
@@ -227,11 +228,18 @@ export default function RequirementEditor({ jd, creating, matches, template = nu
           <input id="req-current-status" className="input-field" maxLength={500} value={details.currentStatus} onChange={setField('currentStatus')} placeholder="e.g. Interview scheduled with client" />
         </div>
         <div>
-          <label className="input-label" htmlFor="req-start">Start Date</label>
+          <label className="input-label" htmlFor="req-received">Requirement Received Date</label>
+          <span className="cluster cluster-tight">
+            <input id="req-received" className="input-field" type="date" value={details.requirementReceivedDate} onChange={setField('requirementReceivedDate')} />
+            {details.requirementReceivedDate && <button type="button" className="link-btn" onClick={() => setDetails((d) => ({ ...d, requirementReceivedDate: '' }))}>Clear</button>}
+          </span>
+        </div>
+        <div>
+          <label className="input-label" htmlFor="req-start">Project Start Date</label>
           <input id="req-start" className="input-field" type="date" value={details.startDate} onChange={setField('startDate')} />
         </div>
         <div>
-          <label className="input-label" htmlFor="req-end">End Date <span className="slug">(tentative)</span></label>
+          <label className="input-label" htmlFor="req-end">Project End Date</label>
           <span className="cluster cluster-tight">
             <input id="req-end" className="input-field" type="date" value={details.endDate} onChange={setField('endDate')} />
             {details.endDate && <button type="button" className="link-btn" onClick={() => setDetails((d) => ({ ...d, endDate: '' }))}>Clear</button>}

@@ -283,20 +283,20 @@ export default function useRequirements() {
     }
   };
 
-  // The end date is tentative: set, change or clear it (null) without touching anything else.
+  // The project end date is optional: set, change or clear it (null) without touching anything else.
   const changeEndDate = async (endDate) => {
     if (endDate && selectedJd.start_date && endDate < selectedJd.start_date) {
-      setNotice({ type: 'error', message: 'End date cannot be before the start date.' });
+      setNotice({ type: 'error', message: 'Project end date cannot be before project start date.' });
       return false;
     }
     try {
       const res = await jdApi.update(selectedJd.id, { end_date: endDate });
       setSelectedJd(res.data);
       await loadJDs();
-      setNotice({ type: 'success', message: endDate ? 'End date updated.' : 'End date cleared.' });
+      setNotice({ type: 'success', message: endDate ? 'Project end date updated.' : 'Project end date cleared.' });
       return true;
     } catch (err) {
-      setNotice({ type: 'error', message: errorText(err, 'Could not change the end date.') });
+      setNotice({ type: 'error', message: errorText(err, 'Could not change the project end date.') });
       return false;
     }
   };

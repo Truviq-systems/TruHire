@@ -144,7 +144,7 @@ def test_requirements_report_lists_each_requirement_with_stage_counts(env):
     row = next(r for r in body["requirements"] if r["id"] == position_id)
     assert row["client_name"] == "Aaseya" and row["no_of_positions"] >= 1
     assert row["stages"]["Shortlisted"] == 1 and set(row["stages"]) == set(body["stages"])
-    assert row["status"] in ("Open", "Mapped", "Fulfilled", "Cancelled")
+    assert row["status"] in ("Active", "Non-Active", "On Hold", "Filled")
 
 
 def test_the_old_analytics_paths_still_answer_so_an_older_frontend_keeps_working(env):

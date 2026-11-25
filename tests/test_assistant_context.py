@@ -11,7 +11,7 @@ from backend.routers import assistant
 from backend.services.llm.assistant_context import GLOSSARY, NO_CLIENT, RULES, build_data_context
 
 
-def _seed(db, user, practice, client_name, status="Open"):
+def _seed(db, user, practice, client_name, status="Active"):
     demand = db.query(Demand).filter(Demand.id == canonical_demand_id(practice)).first()
     if not demand:
         demand = Demand(id=canonical_demand_id(practice), name=practice)
@@ -39,14 +39,14 @@ def test_data_context_counts_live_demands_by_practice_and_client():
         before = build_data_context(db, "")
         _seed(db, user, "Pega", "Infosys")
         _seed(db, user, "Pega", None)
-        _seed(db, user, "Java", "Infosys", status="Cancelled")
+        _seed(db, user, "Java", "Infosys", status="Non-Active")
         db.flush()
         after = build_data_context(db, "how many demands for Infosys?")
 
         assert after["totals"]["all_requirements"] == before["totals"]["all_requirements"] + 3
         assert after["totals"]["live_requirements"] == before["totals"]["live_requirements"] + 2
-        assert after["totals"]["cancelled"] == before["totals"]["cancelled"] + 1
-        assert after["practices"]["Pega"]["Open"] == before["practices"].get("Pega", {}).get("Open", 0) + 2
+        assert after["totals"]["non_active"] == before["totals"]["non_active"] + 1
+        assert after["practices"]["Pega"]["Active"] == before["practices"].get("Pega", {}).get("Active", 0) + 2
         infosys = after["live_requirements_by_client"]["Infosys"]
         assert infosys.get("Pega", 0) == before["live_requirements_by_client"].get("Infosys", {}).get("Pega", 0) + 1
         assert infosys.get("Java", 0) == before["live_requirements_by_client"].get("Infosys", {}).get("Java", 0)  # cancelled is not live

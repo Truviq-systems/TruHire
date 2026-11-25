@@ -155,8 +155,9 @@ def apply_extraction(db: Session, s: AssistantDemandSession, title: str, text: s
         values = _jd_field_report(title, text)["values"]
         found.update({
             "title": values.get("title") or title, "client_name": values.get("client_name"),
-            "experience_years": values.get("experience_years"), "experience_max_years": values.get("experience_max_years"),
+            "experience_years": values.get("experience_years"), "relevant_experience_years": values.get("relevant_experience_years"),
             "locations": values.get("locations") or None, "no_of_positions": values.get("position_count"),
+            "requirement_received_date": values.get("requirement_received_date"),
             "start_date": values.get("start_date"), "end_date": values.get("end_date"),
         })
     except Exception as exc:  # the reader may call the model; the form can still be filled by hand
@@ -494,9 +495,11 @@ EDIT_COMMAND = re.compile(r"^(?:edit|change|update)\s+(?:the\s+)?(.+?)\W*$", re.
 
 def _field_from_words(words: str) -> Optional[str]:
     words = words.strip().lower()
-    aliases = {"practice": "demand_id", "demand practice": "demand_id", "client": "client_name", "min experience": "experience_years",
-               "minimum experience": "experience_years", "max experience": "experience_max_years", "maximum experience": "experience_max_years",
-               "location": "locations", "positions": "no_of_positions", "start": "start_date", "end": "end_date", "end date": "end_date",
+    aliases = {"practice": "demand_id", "demand practice": "demand_id", "client": "client_name", "total experience": "experience_years",
+               "relevant experience": "relevant_experience_years",
+               "location": "locations", "positions": "no_of_positions",
+               "requirement received date": "requirement_received_date", "received date": "requirement_received_date",
+               "start": "start_date", "project start date": "start_date", "end": "end_date", "end date": "end_date", "project end date": "end_date",
                "spec": "jd_text", "description": "jd_text", "jd": "jd_text"}
     if words in aliases:
         return aliases[words]

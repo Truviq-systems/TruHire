@@ -15,9 +15,9 @@ function Footer({ busy, canConfirm, onClose, label, onConfirm }) {
   );
 }
 
-// Choosing Cancelled asks for the reason first; nothing is saved until it is given.
+// Choosing Non-Active or On Hold asks for the reason first; nothing is saved until it is given.
 // onConfirm resolves to null on success or an error message to show inside the popup.
-export function CancelReasonModal({ initial = '', onConfirm, onClose }) {
+export function CancelReasonModal({ status = 'Non-Active', initial = '', onConfirm, onClose }) {
   const [reason, setReason] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -28,11 +28,11 @@ export function CancelReasonModal({ initial = '', onConfirm, onClose }) {
     if (problem) setError(problem); else onClose();
   };
   return (
-    <Modal title="Cancel demand" size="sm" busy={busy} onClose={onClose}
-      footer={<Footer busy={busy} canConfirm={!!reason.trim()} onClose={onClose} label="Confirm cancellation" onConfirm={confirm} />}>
-      <label className="input-label" htmlFor="cancel-reason">Reason for cancelling</label>
+    <Modal title={`Mark demand as ${status}`} size="sm" busy={busy} onClose={onClose}
+      footer={<Footer busy={busy} canConfirm={!!reason.trim()} onClose={onClose} label="Confirm" onConfirm={confirm} />}>
+      <label className="input-label" htmlFor="cancel-reason">Reason for {status}</label>
       <textarea id="cancel-reason" className="input-field" rows={4} maxLength={MAX_CANCELLATION_REASON} autoFocus required
-        value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why is this demand being cancelled?" />
+        value={reason} onChange={(e) => setReason(e.target.value)} placeholder={`Why is this demand marked ${status}?`} />
       {error && <p className="req-error" role="alert">{error}</p>}
     </Modal>
   );

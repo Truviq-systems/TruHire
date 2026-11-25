@@ -229,12 +229,13 @@ def llm_extract_demand_fields(title: str, jd_text: str) -> Optional[Dict[str, An
 Return valid JSON only with exactly these keys:
 - "title": Job title / role being hired for (without company name or requisition IDs, "" if unclear)
 - "client_name": Client or customer company name (e.g. Infosys, Coforge, NTT Data, Cretera, etc.; "" if not specified)
-- "experience_years": Minimum experience in years as a number (e.g. 5, or null if unstated)
-- "experience_max_years": Maximum experience in years as a number (e.g. 8, or null if unstated)
+- "experience_years": Total experience in years as a number (e.g. 5, or null if unstated)
+- "relevant_experience_years": Relevant experience in years as a number (e.g. 3, or null if unstated)
 - "locations": List of locations/cities explicitly mentioned (e.g. ["Bangalore"], or empty list [])
 - "no_of_positions": Number of positions/openings/vacancies as an integer (e.g. 3, or null if unstated)
-- "start_date": Target/expected/joining start date in YYYY-MM-DD format (or written date if unformatted, null if not stated)
-- "end_date": Tentative/target/contract end date in YYYY-MM-DD format (or written date if unformatted, null if not stated)
+- "requirement_received_date": Requirement received date in YYYY-MM-DD format (or written date if unformatted, null if not stated)
+- "start_date": Target/expected/project start date in YYYY-MM-DD format (or written date if unformatted, null if not stated)
+- "end_date": Tentative/target/project/contract end date in YYYY-MM-DD format (or written date if unformatted, null if not stated)
 - "work_mode": "remote", "hybrid", or "onsite" if stated, otherwise ""
 - "skills": List of top technical skills explicitly required (up to 12)
 
@@ -251,21 +252,22 @@ Return valid JSON only with exactly these keys:
             return None
 
         # Clean and validate dates
+        received_d = parse_lenient_date(data.get("requirement_received_date"))
         start_d = parse_lenient_date(data.get("start_date"))
         end_d = parse_lenient_date(data.get("end_date"))
 
         # Clean experience
-        min_exp = data.get("experience_years")
+        total_exp = data.get("experience_years")
         try:
-            min_exp = float(min_exp) if min_exp is not None and str(min_exp).strip() != "" else None
+            total_exp = float(total_exp) if total_exp is not None and str(total_exp).strip() != "" else None
         except (ValueError, TypeError):
-            min_exp = None
+            total_exp = None
 
-        max_exp = data.get("experience_max_years")
+        rel_exp = data.get("relevant_experience_years")
         try:
-            max_exp = float(max_exp) if max_exp is not None and str(max_exp).strip() != "" else None
+            rel_exp = float(rel_exp) if rel_exp is not None and str(rel_exp).strip() != "" else None
         except (ValueError, TypeError):
-            max_exp = None
+            rel_exp = None
 
         # Clean positions
         positions = data.get("no_of_positions")
@@ -303,10 +305,11 @@ Return valid JSON only with exactly these keys:
             "title": role or None,
             "role": role or None,
             "client_name": client or None,
-            "experience_years": min_exp,
-            "experience_max_years": max_exp,
+            "experience_years": total_exp,
+            "relevant_experience_years": rel_exp,
             "locations": clean_locs or None,
             "no_of_positions": positions,
+            "requirement_received_date": received_d.isoformat() if received_d else None,
             "start_date": start_d.isoformat() if start_d else None,
             "end_date": end_d.isoformat() if end_d else None,
             "work_mode": mode or None,

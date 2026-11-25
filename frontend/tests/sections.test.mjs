@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { changedDetails, groupByClient, groupRows, inClient, UNASSIGNED_CLIENT, filterDemands, sortByStatus, detailsPayload, showRole, formatDate, formatExperience, formatLocations, formatPositions, jdLocations, historyChanges, validateDetails } from '../src/lib/requirements.js';
+import { changedDetails, DEMAND_OWNERS, groupByClient, groupRows, inClient, UNASSIGNED_CLIENT, filterDemands, sortByStatus, detailsPayload, showRole, formatDate, formatExperience, formatLocations, formatPositions, jdLocations, historyChanges, validateDetails } from '../src/lib/requirements.js';
 import { MAX_NOTICE_DAYS, freshness, formatNotice, noticePayload } from '../src/lib/ingestion.js';
 import { explainScore, skillComparison } from '../src/lib/scoreExplanation.js';
 import { FALLBACK_META } from '../src/lib/meta.js';
@@ -7,36 +7,39 @@ import { FALLBACK_META } from '../src/lib/meta.js';
 const run = (name, fn) => { try { fn(); console.log(`PASS ${name}`); } catch (e) { console.error(`FAIL ${name}\n`, e); process.exitCode = 1; } };
 const DAY = 86_400_000;
 
-run('JD statuses are exactly Open, Cancelled, Fulfilled, Mapped (no Closed)', () => {
-  assert.deepEqual(FALLBACK_META.jd_statuses, ['Open', 'Cancelled', 'Fulfilled', 'Mapped']);
-  assert.deepEqual(FALLBACK_META.resume_linked_jd_statuses, ['Mapped', 'Fulfilled']);
+run('JD statuses are Active, Non-Active, On Hold, Filled and owners include Guru Prasad Bapana', () => {
+  assert.deepEqual(FALLBACK_META.jd_statuses, ['Active', 'Non-Active', 'On Hold', 'Filled']);
+  assert.deepEqual(FALLBACK_META.resume_linked_jd_statuses, ['Filled']);
+  assert.deepEqual(FALLBACK_META.reason_required_jd_statuses, ['Non-Active', 'On Hold']);
   assert.deepEqual(FALLBACK_META.client_names, ['Cretera', 'Infosys', 'Coforge', 'Aaseya', 'NTT Data', 'Utsuk']);
-  assert.equal(FALLBACK_META.default_jd_status, 'Open');
+  assert.equal(FALLBACK_META.default_jd_status, 'Active');
+  assert.ok(DEMAND_OWNERS.includes('Guru Prasad Bapana'));
 });
 
 run('details validation: experience range and date order', () => {
-  assert.equal(validateDetails({ experience: '5', startDate: '2026-01-01', endDate: '2026-01-01' }), null);
-  assert.equal(validateDetails({ experience: '', startDate: '', endDate: '' }), null);
-  assert.match(validateDetails({ experience: '-1' }), /Min experience/);
-  assert.match(validateDetails({ experience: '61' }), /Min experience/);
-  assert.match(validateDetails({ experience: 'abc' }), /Min experience/);
-  assert.match(validateDetails({ startDate: '2026-02-01', endDate: '2026-01-01' }), /End date/);
+  assert.equal(validateDetails({ experience: '5', relevantExperience: '3', startDate: '2026-01-01', endDate: '2026-01-01', locations: ['Pune'] }), null);
+  assert.equal(validateDetails({ experience: '', startDate: '', endDate: '', locations: ['Pune'] }), null);
+  assert.match(validateDetails({ experience: '-1', locations: ['Pune'] }), /Total experience/);
+  assert.match(validateDetails({ experience: '61', locations: ['Pune'] }), /Total experience/);
+  assert.match(validateDetails({ experience: 'abc', locations: ['Pune'] }), /Total experience/);
+  assert.match(validateDetails({ startDate: '2026-02-01', endDate: '2026-01-01', locations: ['Pune'] }), /Project end date/);
 });
 
 run('detailsPayload turns blanks into null and trims text', () => {
-  assert.deepEqual(detailsPayload({ role: 'ignored', locations: ['  Pune ', '', 'Mumbai'], experience: '', startDate: '', endDate: '', status: 'Open' }),
-    { locations: ['Pune', 'Mumbai'], no_of_positions: null, client_name: null, demand_owner: null, current_status: null, experience_years: null, experience_max_years: null, start_date: null, end_date: null, status: 'Open' });
-  assert.equal(detailsPayload({ noOfPositions: '3', status: 'Open' }).no_of_positions, 3);
-  assert.deepEqual(detailsPayload({ locations: [], status: 'Open' }).locations, []);  // an empty list clears the places
-  assert.equal(detailsPayload({ experience: '0', status: 'Open' }).experience_years, 0);
-  assert.equal(detailsPayload({ experience: '3', experienceMax: '5', status: 'Open' }).experience_max_years, 5);
+  assert.deepEqual(detailsPayload({ role: 'ignored', locations: ['  Pune ', '', 'Mumbai'], experience: '', relevantExperience: '', requirementReceivedDate: '', startDate: '', endDate: '', status: 'Active' }),
+    { locations: ['Pune', 'Mumbai'], no_of_positions: null, client_name: null, demand_owner: null, current_status: null, experience_years: null, relevant_experience_years: null, requirement_received_date: null, start_date: null, end_date: null, status: 'Active' });
+  assert.equal(detailsPayload({ noOfPositions: '3', status: 'Active' }).no_of_positions, 3);
+  assert.deepEqual(detailsPayload({ locations: [], status: 'Active' }).locations, []);  // an empty list clears the places
+  assert.equal(detailsPayload({ experience: '0', status: 'Active' }).experience_years, 0);
+  assert.equal(detailsPayload({ experience: '5', relevantExperience: '3', status: 'Active' }).relevant_experience_years, 3);
+  assert.equal(detailsPayload({ requirementReceivedDate: '2026-01-05', status: 'Active' }).requirement_received_date, '2026-01-05');
 });
 
 run('positions and locations: validation and display', () => {
   assert.equal(validateDetails({ noOfPositions: '2', locations: ['Pune'] }), null);
-  assert.equal(validateDetails({ noOfPositions: '' }), null);
-  assert.equal(validateDetails({ noOfPositions: '0' }), null);  // 0 is allowed (the backend accepts 0 to MAX)
-  for (const bad of ['-1', '1.5', 'abc']) assert.match(validateDetails({ noOfPositions: bad }), /No\. of positions/);
+  assert.equal(validateDetails({ noOfPositions: '', locations: ['Pune'] }), null);
+  assert.equal(validateDetails({ noOfPositions: '0', locations: ['Pune'] }), null);  // 0 is allowed (the backend accepts 0 to MAX)
+  for (const bad of ['-1', '1.5', 'abc']) assert.match(validateDetails({ noOfPositions: bad, locations: ['Pune'] }), /No\. of positions/);
   assert.match(validateDetails({ locations: Array.from({ length: 11 }, (_, i) => `P${i}`) }), /at most 10/i);
   assert.deepEqual(jdLocations({ locations: ['Pune', 'Mumbai'], location: 'Pune; Mumbai' }), ['Pune', 'Mumbai']);
   assert.deepEqual(jdLocations({ location: 'Chennai' }), ['Chennai']);  // a demand saved before several places were allowed
@@ -47,42 +50,43 @@ run('positions and locations: validation and display', () => {
   assert.equal(formatPositions(null), '—');
 });
 
-run('min / max experience: validation and display', () => {
-  assert.equal(validateDetails({ experience: '3', experienceMax: '5' }), null);
-  assert.equal(validateDetails({ experience: '', experienceMax: '5' }), null);
-  assert.match(validateDetails({ experience: '5', experienceMax: '3' }), /Max experience cannot be less/);
-  assert.match(validateDetails({ experienceMax: '61' }), /Max experience/);
-  assert.equal(formatExperience(3, 5), '3-5 yrs');
-  assert.equal(formatExperience(3, null), '3+ yrs');
-  assert.equal(formatExperience(null, 5), 'up to 5 yrs');
-  assert.equal(formatExperience(4, 4), '4 yrs');
+run('total / relevant experience: validation and display', () => {
+  assert.equal(validateDetails({ experience: '5', relevantExperience: '3', locations: ['Pune'] }), null);
+  assert.equal(validateDetails({ experience: '', relevantExperience: '3', locations: ['Pune'] }), null);
+  assert.match(validateDetails({ experience: '3', relevantExperience: '5', locations: ['Pune'] }), /Relevant experience cannot exceed/);
+  assert.match(validateDetails({ relevantExperience: '61', locations: ['Pune'] }), /Relevant experience/);
+  assert.equal(formatExperience(5, 3), '5 yrs (3 yrs rel.)');
+  assert.equal(formatExperience(3, null), '3 yrs total');
+  assert.equal(formatExperience(null, 2), '2 yrs rel.');
+  assert.equal(formatExperience(1, 1), '1 yr (1 yr rel.)');
   assert.equal(formatExperience(null, null), '—');
 });
 
 run('changedDetails sends only edited fields', () => {
-  const initial = { locations: ['Pune'], experience: '3', startDate: '', endDate: '', status: 'Open' };
+  const initial = { locations: ['Pune'], experience: '3', startDate: '', endDate: '', status: 'Active' };
   assert.deepEqual(changedDetails(initial, initial), {});
-  assert.deepEqual(changedDetails(initial, { ...initial, locations: [], status: 'Open' }), { locations: [] });
+  assert.deepEqual(changedDetails(initial, { ...initial, locations: [], status: 'Active' }), { locations: [] });
   assert.deepEqual(changedDetails(initial, { ...initial, locations: ['Pune', 'Mumbai'] }), { locations: ['Pune', 'Mumbai'] });
 });
 
 run('a status that needs extra data sends it, and only with that status', () => {
-  const initial = { status: 'Open' };
-  assert.deepEqual(changedDetails(initial, { ...initial, status: 'Cancelled', cancellationReason: '  Budget cut ' }), { status: 'Cancelled', cancellation_reason: 'Budget cut' });
-  assert.deepEqual(changedDetails(initial, { ...initial, status: 'Mapped', candidateIds: ['a', 'b'] }), { status: 'Mapped', candidate_ids: ['a', 'b'] });
-  assert.equal('candidate_ids' in detailsPayload({ status: 'Open', candidateIds: ['a'] }), false);
-  assert.equal('cancellation_reason' in detailsPayload({ status: 'Mapped', cancellationReason: 'x' }), false);
-  // Untouched Mapped demand: nothing to send.
-  const mapped = { status: 'Mapped', candidateIds: ['a', 'b'] };
-  assert.deepEqual(changedDetails(mapped, { ...mapped, candidateIds: ['a', 'b'] }), {});
-  assert.deepEqual(changedDetails(mapped, { ...mapped, candidateIds: ['a'] }), { candidate_ids: ['a'] });
+  const initial = { status: 'Active' };
+  assert.deepEqual(changedDetails(initial, { ...initial, status: 'Non-Active', cancellationReason: '  Budget cut ' }), { status: 'Non-Active', cancellation_reason: 'Budget cut' });
+  assert.deepEqual(changedDetails(initial, { ...initial, status: 'On Hold', cancellationReason: '  Awaiting client ' }), { status: 'On Hold', cancellation_reason: 'Awaiting client' });
+  assert.deepEqual(changedDetails(initial, { ...initial, status: 'Filled', candidateIds: ['a', 'b'] }), { status: 'Filled', candidate_ids: ['a', 'b'] });
+  assert.equal('candidate_ids' in detailsPayload({ status: 'Active', candidateIds: ['a'] }), false);
+  assert.equal('cancellation_reason' in detailsPayload({ status: 'Filled', cancellationReason: 'x' }), false);
+  // Untouched Filled demand: nothing to send.
+  const filled = { status: 'Filled', candidateIds: ['a', 'b'] };
+  assert.deepEqual(changedDetails(filled, { ...filled, candidateIds: ['a', 'b'] }), {});
+  assert.deepEqual(changedDetails(filled, { ...filled, candidateIds: ['a'] }), { candidate_ids: ['a'] });
 });
 
 run('date-only values keep their calendar day; missing values show a dash', () => {
   assert.match(formatDate('2026-11-01'), /1/);
   assert.equal(formatDate(null), '—');
-  assert.equal(formatExperience(1), '1+ yr');
-  assert.equal(formatExperience(5), '5+ yrs');
+  assert.equal(formatExperience(1), '1 yr total');
+  assert.equal(formatExperience(5), '5 yrs total');
   assert.equal(formatExperience(null), '—');
 });
 
@@ -96,8 +100,8 @@ run('role is shown only when it differs from the title', () => {
 run('history rows show previous and new values, and only one side for create/delete', () => {
   const upd = historyChanges({ action: 'updated', changes: { location: { old: 'Pune', new: 'Mumbai' }, role: { old: null, new: 'Lead' } } });
   assert.deepEqual(upd, [{ field: 'Location', from: 'Pune', to: 'Mumbai' }, { field: 'Role', from: 'empty', to: 'Lead' }]);
-  assert.equal(historyChanges({ action: 'created', changes: { status: { old: null, new: 'Open' } } })[0].from, null);
-  assert.equal(historyChanges({ action: 'deleted', changes: { status: { old: 'Open', new: null } } })[0].to, null);
+  assert.equal(historyChanges({ action: 'created', changes: { status: { old: null, new: 'Active' } } })[0].from, null);
+  assert.equal(historyChanges({ action: 'deleted', changes: { status: { old: 'Active', new: null } } })[0].to, null);
   assert.deepEqual(historyChanges({ action: 'updated' }), []);
 });
 
@@ -142,17 +146,17 @@ run('skill comparison exposes matched and missing JD skills', () => {
 });
 
 run('client name is optional, trimmed, and clearable', () => {
-  assert.equal(detailsPayload({ clientName: '  Acme  ', status: 'Open' }).client_name, 'Acme');
-  assert.equal(detailsPayload({ clientName: '   ', status: 'Open' }).client_name, null);
-  const initial = { clientName: 'Acme', status: 'Open' };
+  assert.equal(detailsPayload({ clientName: '  Acme  ', status: 'Active' }).client_name, 'Acme');
+  assert.equal(detailsPayload({ clientName: '   ', status: 'Active' }).client_name, null);
+  const initial = { clientName: 'Acme', status: 'Active' };
   assert.deepEqual(changedDetails(initial, { ...initial, clientName: '' }), { client_name: null });
 });
 
-run('demands sort Open -> Mapped -> Fulfilled -> Cancelled, newest first within a status', () => {
+run('demands sort Active -> On Hold -> Filled -> Non-Active, newest first within a status', () => {
   const d = (id, status, created_at) => ({ id, status, created_at });
   const sorted = sortByStatus([
-    d('x', 'Cancelled', '2026-03-01'), d('a', 'Fulfilled', '2026-03-02'), d('b', 'Open', '2026-01-01'),
-    d('c', 'Open', '2026-02-01'), d('e', undefined, '2026-01-15'), d('f', 'Mapped', '2026-01-01'),
+    d('x', 'Non-Active', '2026-03-01'), d('a', 'Filled', '2026-03-02'), d('b', 'Active', '2026-01-01'),
+    d('c', 'Active', '2026-02-01'), d('e', undefined, '2026-01-15'), d('f', 'On Hold', '2026-01-01'),
   ]);
   assert.deepEqual(sorted.map((j) => j.id), ['c', 'e', 'b', 'f', 'a', 'x']);
 });
@@ -167,15 +171,15 @@ run('folder search matches partial ID or title, ignoring case and punctuation', 
 });
 
 const GROUPED = [
-  { id: 'a', demand_id: 'p-java', client_name: 'Infosys', status: 'Open' },
-  { id: 'b', demand_id: 'p-pega', client_name: ' infosys ', status: 'Cancelled' },
-  { id: 'c', demand_id: 'p-pega', client_name: 'Coforge', status: 'Open' },
-  { id: 'd', demand_id: 'p-java', client_name: null, status: 'Open' },
-  { id: 'e', demand_id: null, client_name: '', status: 'Mapped' },
+  { id: 'a', demand_id: 'p-java', client_name: 'Infosys', status: 'Active' },
+  { id: 'b', demand_id: 'p-pega', client_name: ' infosys ', status: 'Non-Active' },
+  { id: 'c', demand_id: 'p-pega', client_name: 'Coforge', status: 'Active' },
+  { id: 'd', demand_id: 'p-java', client_name: null, status: 'Active' },
+  { id: 'e', demand_id: null, client_name: '', status: 'Filled' },
 ];
 const practiceOf = (id) => ({ 'p-java': 'Java', 'p-pega': 'Pega' })[id];
 
-run('client folders merge names by case, count cancelled apart and put no-client last', () => {
+run('client folders merge names by case, count non-active apart and put no-client last', () => {
   const folders = groupByClient(GROUPED);
   assert.deepEqual(folders.map((f) => f.name), ['Coforge', 'Infosys', '']);
   const infosys = folders[1];

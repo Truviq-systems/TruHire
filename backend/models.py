@@ -55,15 +55,22 @@ class Demand(Base):
     positions = relationship("Position", back_populates="demand", passive_deletes=True)
 
 
-JD_STATUSES = ("Open", "Cancelled", "Fulfilled", "Mapped")  # lifecycle of a JD (Position)
-# "Map" was renamed and "Closed" was removed (those demands are Cancelled); old rows and clients are still understood.
-LEGACY_JD_STATUS_ALIASES = {"Map": "Mapped", "Closed": "Cancelled"}
-INACTIVE_JD_STATUSES = ("Cancelled",)  # kept on record but not counted on demand folders
-FULFILLED_JD_STATUSES = ("Fulfilled",)  # the demand's positions are filled: reports count them as done
-RESUME_LINKED_JD_STATUSES = ("Mapped", "Fulfilled")  # statuses that name the resume(s) the demand was filled with
+JD_STATUSES = ("Active", "Non-Active", "On Hold", "Filled")  # lifecycle of a JD (Position)
+LEGACY_JD_STATUS_ALIASES = {
+    "Open": "Active",
+    "Fulfilled": "Filled",
+    "Mapped": "Filled",
+    "Map": "Filled",
+    "Cancelled": "Non-Active",
+    "Closed": "Non-Active",
+}
+INACTIVE_JD_STATUSES = ("Non-Active",)  # kept on record but not counted on demand folders
+FULFILLED_JD_STATUSES = ("Filled",)  # the demand's positions are filled: reports count them as done
+RESUME_LINKED_JD_STATUSES = ("Filled",)  # statuses that name the resume(s) the demand was filled with
+REASON_REQUIRED_JD_STATUSES = ("Non-Active", "On Hold")  # statuses that require a reason
 MAX_CANCELLATION_REASON_CHARS = 1000
 CLIENT_NAMES = ("Cretera", "Infosys", "Coforge", "Aaseya", "NTT Data", "Utsuk")  # the clients a demand can belong to
-DEFAULT_JD_STATUS = "Open"
+DEFAULT_JD_STATUS = "Active"
 
 
 class Position(Base):
@@ -82,23 +89,25 @@ class Position(Base):
     search_filters = Column(JSON, nullable=True)
     # Optional grouping; NULL = standalone requirement. Deleting a Demand never deletes its positions.
     demand_id = Column(String, ForeignKey("demands.id", ondelete="SET NULL"), nullable=True, index=True)
-    # JD details entered by the recruiter; NULL = not stated. status NULL on pre-status rows is treated as Open.
+    # JD details entered by the recruiter; NULL = not stated. status NULL on pre-status rows is treated as Active.
     status = Column(String, nullable=True, default=DEFAULT_JD_STATUS, index=True)
     role = Column(String, nullable=True)
-    experience_years = Column(Float, nullable=True)  # minimum years required
-    experience_max_years = Column(Float, nullable=True)
+    experience_years = Column(Float, nullable=True)  # total experience required (years)
+    experience_max_years = Column(Float, nullable=True)  # legacy column kept nullable for older rows
+    relevant_experience_years = Column(Float, nullable=True)  # relevant experience required (years)
     no_of_positions = Column(Integer, nullable=True)  # how many hires the demand is for; NULL on demands made before this field
     locations = Column(JSON, nullable=True)  # list of places; `location` below mirrors it as "; "-joined text
-    start_date = Column(Date, nullable=True)
-    end_date = Column(Date, nullable=True)
+    requirement_received_date = Column(Date, nullable=True)
+    start_date = Column(Date, nullable=True)  # project start date
+    end_date = Column(Date, nullable=True)    # project end date
     location = Column(String, nullable=True)
     client_name = Column(String, nullable=True)  # optional; NULL = not stated
     demand_owner = Column(String, nullable=True)  # free-text owner name shown on demand cards; NULL = not stated
     current_status = Column(Text, nullable=True)  # free-text "where the demand stands"; separate from the lifecycle `status`
     updated_at = Column(DateTime, nullable=True)  # last modified; NULL = never changed since creation
     updated_by = Column(String, nullable=True)  # user id of the last modifier; NULL = unknown / never changed
-    cancellation_reason = Column(Text, nullable=True)  # only while status is Cancelled
-    mapped_candidate_ids = Column(JSON, nullable=True)  # candidate ids the demand is Mapped / Fulfilled with
+    cancellation_reason = Column(Text, nullable=True)  # only while status is Non-Active or On Hold
+    mapped_candidate_ids = Column(JSON, nullable=True)  # candidate ids the demand is Filled with
     creator = relationship("User", back_populates="positions")
     demand = relationship("Demand", back_populates="positions")
     matches = relationship("CandidateMatch", back_populates="position", cascade="all, delete-orphan")
@@ -276,7 +285,7 @@ INGEST_FINISHED_BATCH_STATUSES = ("completed", "failed", "cancelled")
 INGEST_FILE_OUTCOMES = {"processed": ("indexed", "updated"), "duplicates": ("duplicate",), "failed": ("failed",)}
 # Demand details a recruiter may edit (PositionUpdateRequest, the assistant's update_demand tool).
 DEMAND_DETAIL_FIELDS = ("role", "location", "locations", "no_of_positions", "client_name", "demand_owner", "current_status",
-                        "experience_years", "experience_max_years", "start_date", "end_date")
+                        "experience_years", "relevant_experience_years", "requirement_received_date", "start_date", "end_date")
 DEFAULT_REQUIREMENT_STATUS = "New"
 
 

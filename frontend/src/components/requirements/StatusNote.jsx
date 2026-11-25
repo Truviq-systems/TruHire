@@ -16,12 +16,12 @@ export default function StatusNote({ jd }) {
     return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', close); };
   }, [open]);
 
-  const cancelled = jd.status === 'Cancelled';
-  const linked = jd.status === 'Mapped' || jd.status === 'Fulfilled' || jd.status === 'Map';
-  if (!cancelled && !linked) return null;
+  const reasonRequired = ['Non-Active', 'On Hold', 'Cancelled'].includes(jd.status);
+  const linked = ['Filled', 'Mapped', 'Fulfilled', 'Map'].includes(jd.status);
+  if (!reasonRequired && !linked) return null;
   const resumes = jd.mapped_resumes || [];
-  const Icon = cancelled ? Info : FileText;
-  const label = cancelled ? 'Show cancellation reason' : `Show ${jd.status} resumes`;
+  const Icon = reasonRequired ? Info : FileText;
+  const label = reasonRequired ? `Show ${jd.status} reason` : `Show ${jd.status} resumes`;
 
   return (
     <span className="status-note" ref={ref}>
@@ -29,15 +29,15 @@ export default function StatusNote({ jd }) {
         <Icon size={14} />
       </button>
       {open && (
-        <div className="status-note-pop" role="dialog" aria-label={cancelled ? 'Cancellation reason' : 'Associated resumes'}>
-          {cancelled ? (
+        <div className="status-note-pop" role="dialog" aria-label={reasonRequired ? `${jd.status} reason` : 'Associated resumes'}>
+          {reasonRequired ? (
             <>
-              <strong>Cancellation reason</strong>
+              <strong>{jd.status} reason</strong>
               <p>{jd.cancellation_reason || 'No reason was recorded for this demand.'}</p>
             </>
           ) : (
             <>
-              <strong>{jd.status === 'Fulfilled' ? 'Fulfilled with' : 'Mapped to'} {resumes.length === 1 ? 'resume' : 'resumes'}</strong>
+              <strong>{jd.status === 'Mapped' ? 'Mapped to' : 'Filled with'} {resumes.length === 1 ? 'resume' : 'resumes'}</strong>
               {resumes.length === 0 ? <p>No resumes are recorded for this demand.</p> : (
                 <ul>{resumes.map((r) => <li key={r.id}><span className="slug">{r.display_id || '—'}</span> {r.candidate_name || 'Unnamed candidate'}</li>)}</ul>
               )}

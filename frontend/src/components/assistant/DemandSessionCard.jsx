@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { ListChecks, Loader2, MessagesSquare, Pencil } from 'lucide-react';
+import { useMeta } from '../../context/MetaContext';
 
 // The interactive side of the guided demand workflow. The server decides the mode, the current field and what is
 // valid; this component only renders the session it is given (fields, options, errors) and sends the user's input back.
@@ -74,6 +75,7 @@ function FieldRow({ field, label, marked = true, value, onChange, autoFocus }) {
 const Actions = ({ children }) => <div className="demand-actions">{children}</div>;
 
 export default function DemandSessionCard({ session, busy, error, onAct, onCancel }) {
+  const { default_jd_status: defaultStatus } = useMeta();
   const [showEdit, setShowEdit] = useState(false);
   const fields = session.fields;
   const current = fields.find((f) => f.key === session.current_field);
@@ -142,7 +144,7 @@ export default function DemandSessionCard({ session, busy, error, onAct, onCance
               </dd>
             </div>
           ))}
-          <div><dt>Demand Status</dt><dd>Open</dd></div>
+          <div><dt>Demand Status</dt><dd>{defaultStatus}</dd></div>
         </dl>
         {errorLine}
         <Actions>

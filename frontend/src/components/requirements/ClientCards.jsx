@@ -24,7 +24,7 @@ export default function ClientCards({ jds, loading, onOpen, onCreate, emptyText 
               aria-label={`${name || 'No client assigned'}, ${positions} position${positions === 1 ? '' : 's'}`}>
               <span className="info-card-title folder-card-title"><Building2 size={20} aria-hidden="true" /> {name || 'No client assigned'}</span>
               <dl className="info-card-facts">
-                <div><dt>Demands</dt><dd>{live}{cancelled > 0 ? ` (+${cancelled} cancelled)` : ''}</dd></div>
+                <div><dt>Demands</dt><dd>{live}{cancelled > 0 ? ` (+${cancelled} non-active)` : ''}</dd></div>
               </dl>
               <span className="info-card-count"><span className="info-card-count-num">{positions}</span> {positions === 1 ? 'position' : 'positions'}</span>
             </button>

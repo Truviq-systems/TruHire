@@ -94,7 +94,7 @@ export default function JdCards({ jds, loading, scope = 'practice', practiceName
           {shown.map((jd) => (
             <li
               key={jd.id}
-              className={`info-card-wrap${['Cancelled', 'Mapped', 'Fulfilled'].includes(jd.status) ? ' has-note' : ''}${statusEditingId === jd.id ? ' is-editing' : ''}`}
+              className={`info-card-wrap${['Non-Active', 'On Hold', 'Filled', 'Cancelled', 'Mapped', 'Fulfilled'].includes(jd.status) ? ' has-note' : ''}${statusEditingId === jd.id ? ' is-editing' : ''}`}
             >
               <div
                 className="card card-hover info-card"
@@ -132,7 +132,7 @@ export default function JdCards({ jds, loading, scope = 'practice', practiceName
                     </Fact>
                     <Fact label="Experience">
                       <span className="fact-inline">
-                        <Clock size={12} className="fact-icon-muted" /> {formatExperience(jd.experience_years, jd.experience_max_years)}
+                        <Clock size={12} className="fact-icon-muted" /> {formatExperience(jd.experience_years, jd.relevant_experience_years)}
                       </span>
                     </Fact>
                   </div>
@@ -163,10 +163,16 @@ export default function JdCards({ jds, loading, scope = 'practice', practiceName
                     </Fact>
                   </div>
 
+                  {jd.requirement_received_date && (
+                    <div className="info-card-row">
+                      <Fact label="Requirement Received Date">{formatDate(jd.requirement_received_date)}</Fact>
+                    </div>
+                  )}
+
                   {(jd.start_date || jd.end_date) && (
                     <div className="info-card-row">
-                      <Fact label="Start Date">{formatDate(jd.start_date)}</Fact>
-                      <Fact label="End Date (tentative)">{formatDate(jd.end_date)}</Fact>
+                      <Fact label="Project Start Date">{formatDate(jd.start_date)}</Fact>
+                      <Fact label="Project End Date">{formatDate(jd.end_date)}</Fact>
                     </div>
                   )}
                 </dl>

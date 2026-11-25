@@ -26,6 +26,7 @@ Base = declarative_base()
 
 
 def ensure_schema():
+    from backend import models  # noqa: F401  (registers every table on Base.metadata)
     Base.metadata.create_all(bind=engine)
     # Additive, idempotent column upgrades for databases created before a column existed.
     with engine.begin() as conn:
@@ -53,7 +54,6 @@ def ensure_schema():
         ):
             conn.execute(text(stmt))
         _seed_default_demands(conn)
-    from backend import models  # noqa: F401  (registers every table on Base.metadata)
     _add_missing_columns()
     with engine.begin() as conn:
         # Split talent availability from pipeline status. Old Active/Not Active values
@@ -70,9 +70,9 @@ def ensure_schema():
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_candidates_current_company ON candidates (current_company)"))
         conn.execute(text("UPDATE candidates SET email_norm = lower(trim(email)) WHERE email_norm IS NULL AND email IS NOT NULL"))
         conn.execute(text("UPDATE candidates SET phone_norm = regexp_replace(phone, '[^0-9]', '', 'g') WHERE phone_norm IS NULL AND phone IS NOT NULL"))
-        conn.execute(text("UPDATE positions SET status = 'Open' WHERE status IS NULL"))
-        conn.execute(text("UPDATE positions SET status = 'Mapped' WHERE status = 'Map'"))
-        conn.execute(text("UPDATE positions SET status = 'Cancelled' WHERE status = 'Closed'"))  # Closed no longer exists
+        conn.execute(text("UPDATE positions SET status = 'Active' WHERE status IS NULL OR status = 'Open'"))
+        conn.execute(text("UPDATE positions SET status = 'Filled' WHERE status IN ('Mapped', 'Map', 'Fulfilled')"))
+        conn.execute(text("UPDATE positions SET status = 'Non-Active' WHERE status IN ('Cancelled', 'Closed')"))
         # Demand IDs were renamed from TRU-JD-nnnn to DM-nnnn; carry existing rows, history snapshots and the counter over.
         conn.execute(text("UPDATE positions SET display_id = 'DM-' || substr(display_id, 8) WHERE display_id LIKE 'TRU-JD-%'"))
         for table, col in (("requirement_history", "item_display_id"), ("email_records", "position_display_id")):

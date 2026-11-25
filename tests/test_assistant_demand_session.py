@@ -81,8 +81,8 @@ def _fill_required(client, headers, session):
 def test_fields_follow_the_new_demand_form_with_real_options(ctx):
     client, headers, *_ = ctx
     fields = client.get(f"{PREFIX}/fields", headers=headers).json()["fields"]
-    assert [f["key"] for f in fields] == ["title", "demand_id", "client_name", "experience_years", "experience_max_years",
-                                         "locations", "no_of_positions", "start_date", "end_date", "jd_text"]
+    assert [f["key"] for f in fields] == ["title", "demand_id", "client_name", "experience_years", "relevant_experience_years",
+                                         "locations", "no_of_positions", "requirement_received_date", "start_date", "end_date", "jd_text"]
     assert [f["label"] for f in fields if f["required"]] == ["Title", "Demand Practice", "Specification"]
     practice = next(f for f in fields if f["key"] == "demand_id")
     assert [o["label"] for o in practice["options"]] == list(DEFAULT_DEMAND_NAMES)
@@ -104,7 +104,7 @@ def test_step_by_step_asks_one_field_at_a_time_in_form_order(ctx):
     session, _ = _start(client, headers)
     out = _op(client, headers, session, "mode", {"mode": "step_by_step"})
     session = out["session"]
-    assert session["current_field"] == "title" and session["progress"] == {"step": 1, "total": 10}
+    assert session["current_field"] == "title" and session["progress"] == {"step": 1, "total": 11}
     assert out["messages"][-1]["content"] == "What is the demand title?"
     # fields cannot be answered out of order
     _op(client, headers, session, "answer", {"field": "jd_text", "value": "text"}, expect=409)
@@ -130,11 +130,11 @@ def test_invalid_answers_are_rejected_with_schema_messages(ctx):
     session = _op(client, headers, session, "answer", {"value": "T"})["session"]
     session = _op(client, headers, session, "answer", {"value": "Pega"})["session"]
     session = _op(client, headers, session, "skip")["session"]  # client
-    out = _op(client, headers, session, "answer", {"value": "99"})  # min experience out of range
+    out = _op(client, headers, session, "answer", {"value": "99"})  # total experience out of range
     assert out["session"]["current_field"] == "experience_years" and "60" in out["messages"][-1]["content"]
-    session = _op(client, headers, session, "answer", {"value": "5"})["session"]
-    out = _op(client, headers, session, "answer", {"value": "3"})  # max below min
-    assert out["session"]["current_field"] == "experience_max_years" and "Max experience" in out["messages"][-1]["content"]
+    session = _op(client, headers, session, "answer", {"value": "3"})["session"]
+    out = _op(client, headers, session, "answer", {"value": "5"})  # relevant exceeds total
+    assert out["session"]["current_field"] == "relevant_experience_years" and "Relevant experience" in out["messages"][-1]["content"]
 
 
 def test_all_fields_mode_keeps_valid_values_when_some_fail(ctx):
@@ -260,7 +260,7 @@ def test_confirm_creates_once_and_only_after_review(ctx):
     db.expire_all()
     assert db.query(Position).filter(Position.created_by == user.id).count() == before + 1
     created = db.query(Position).filter(Position.id == out["created"]["id"]).first()
-    assert created.title == "Java Lead" and created.demand_id == canonical_demand_id("Java") and created.status == "Open"
+    assert created.title == "Java Lead" and created.demand_id == canonical_demand_id("Java") and created.status == "Active"
     assert created.no_of_positions == 1  # the form's default
 
 

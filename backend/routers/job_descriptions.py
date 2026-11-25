@@ -12,7 +12,7 @@ from backend.services.common.payloads import candidate_payload
 from backend.models import (
     Position, User, DEMAND_DETAIL_FIELDS, DEFAULT_DEMAND_NAMES, canonical_demand_id, Candidate, CandidateActivity, CandidateMatch, SearchState, Conversation, ConversationMessage, EmailRecord,
     CandidateAssignment, CandidateComment, RequirementCandidateStatus, REQUIREMENT_STATUSES, DEFAULT_REQUIREMENT_STATUS, get_next_position_display_id,
-    JD_STATUSES, LEGACY_JD_STATUS_ALIASES, DEFAULT_JD_STATUS, CLIENT_NAMES, RESUME_LINKED_JD_STATUSES, MAX_CANCELLATION_REASON_CHARS, HISTORY_ACTIONS, HISTORY_CREATED, HISTORY_UPDATED, HISTORY_DELETED, HISTORY_STATUS_CHANGED, RequirementHistory,
+    JD_STATUSES, LEGACY_JD_STATUS_ALIASES, DEFAULT_JD_STATUS, CLIENT_NAMES, REASON_REQUIRED_JD_STATUSES, RESUME_LINKED_JD_STATUSES, MAX_CANCELLATION_REASON_CHARS, HISTORY_ACTIONS, HISTORY_CREATED, HISTORY_UPDATED, HISTORY_DELETED, HISTORY_STATUS_CHANGED, RequirementHistory,
 )
 from backend.auth import get_current_user
 from backend.config import settings
@@ -36,9 +36,9 @@ MAX_LOCATIONS = 10
 MAX_POSITIONS = 10_000
 
 
-def _check_experience_range(low: Optional[float], high: Optional[float]) -> None:
-    if low is not None and high is not None and high < low:
-        raise ValueError("Max experience cannot be less than min experience.")
+def _check_experience_range(total: Optional[float], relevant: Optional[float]) -> None:
+    if total is not None and relevant is not None and relevant > total:
+        raise ValueError("Relevant experience cannot be greater than total experience.")
 
 
 class JDDetails(BaseModel):
@@ -51,12 +51,13 @@ class JDDetails(BaseModel):
     demand_owner: Optional[str] = Field(default=None, max_length=MAX_DETAIL_CHARS)
     # Free-text "where the demand stands"; deliberately NOT one of JD_STATUSES.
     current_status: Optional[str] = Field(default=None, max_length=MAX_CURRENT_STATUS_CHARS)
-    experience_years: Optional[float] = Field(default=None, ge=0, le=MAX_EXPERIENCE_YEARS)  # minimum
-    experience_max_years: Optional[float] = Field(default=None, ge=0, le=MAX_EXPERIENCE_YEARS)
-    start_date: Optional[date] = None
-    end_date: Optional[date] = None
+    experience_years: Optional[float] = Field(default=None, ge=0, le=MAX_EXPERIENCE_YEARS)  # total experience
+    relevant_experience_years: Optional[float] = Field(default=None, ge=0, le=MAX_EXPERIENCE_YEARS)
+    requirement_received_date: Optional[date] = None
+    start_date: Optional[date] = None  # project start date
+    end_date: Optional[date] = None    # project end date
     status: Optional[str] = None
-    # Companion data of a status: why a demand was Cancelled, which resumes a Mapped / Fulfilled one was filled with.
+    # Companion data of a status: why a demand is Non-Active / On Hold, which resumes a Filled one was filled with.
     cancellation_reason: Optional[str] = Field(default=None, max_length=MAX_CANCELLATION_REASON_CHARS)
     candidate_ids: Optional[List[str]] = None
 
@@ -99,7 +100,7 @@ class JDDetails(BaseModel):
 
     @model_validator(mode="after")
     def _experience_range(self):
-        _check_experience_range(self.experience_years, self.experience_max_years)
+        _check_experience_range(self.experience_years, self.relevant_experience_years)
         if self.locations is not None:  # keep the joined text in step; assigning also marks `location` as sent
             self.location = "; ".join(self.locations) or None
         return self
@@ -169,14 +170,15 @@ class PositionResponse(BaseModel):
     demand_owner: Optional[str] = None
     current_status: Optional[str] = None
     experience_years: Optional[float] = None
-    experience_max_years: Optional[float] = None
+    relevant_experience_years: Optional[float] = None
+    requirement_received_date: Optional[date] = None
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     updated_at: Optional[datetime] = None
     last_modified_at: Optional[datetime] = None  # updated_at, or the creation time for a demand never edited
     last_modified_by: Optional[str] = None  # name of whoever last changed it, or the creator for a demand never edited
-    cancellation_reason: Optional[str] = None  # Cancelled demands only
-    mapped_resumes: List[Dict[str, Any]] = []  # Mapped / Fulfilled demands only: [{id, display_id, candidate_name}]
+    cancellation_reason: Optional[str] = None  # Non-Active / On Hold demands only
+    mapped_resumes: List[Dict[str, Any]] = []  # Filled demands only: [{id, display_id, candidate_name}]
     created_by_name: Optional[str] = None
     classification_note: Optional[str] = None  # set when the category was uncertain and defaulted to Others
 
@@ -260,7 +262,7 @@ def invalidate_requirements_cache(jd_id: Optional[str] = None):
         clear_cache(f"requirements:matches:{jd_id}")
 
 
-TRACKED_FIELDS = ("title", "jd_text", "role", "experience_years", "experience_max_years", "no_of_positions", "start_date", "end_date", "location", "client_name", "demand_owner", "current_status", "work_mode", "status", "demand_id", "cancellation_reason", "mapped_candidate_ids")
+TRACKED_FIELDS = ("title", "jd_text", "role", "experience_years", "relevant_experience_years", "no_of_positions", "requirement_received_date", "start_date", "end_date", "location", "client_name", "demand_owner", "current_status", "work_mode", "status", "demand_id", "cancellation_reason", "mapped_candidate_ids")
 _TEXT_PREVIEW_CHARS = 300
 
 
@@ -378,10 +380,11 @@ def _serialize_position(pos: Position, creator_name: Optional[str] = None, modif
         "updated_at": pos.updated_at.isoformat() if pos.updated_at else None,
         "last_modified_at": (pos.updated_at or pos.created_at).isoformat() if (pos.updated_at or pos.created_at) else None,
         "last_modified_by": modifier_name or creator_name,
-        "cancellation_reason": pos.cancellation_reason if _is_status(pos, "Cancelled") else None,
+        "cancellation_reason": pos.cancellation_reason if _is_status(pos, *REASON_REQUIRED_JD_STATUSES) else None,
         "mapped_resumes": _mapped_resumes(pos.mapped_candidate_ids, candidates or {}) if _is_status(pos, *RESUME_LINKED_JD_STATUSES) else [],
         "experience_years": experience,
-        "experience_max_years": pos.experience_max_years,
+        "relevant_experience_years": pos.relevant_experience_years,
+        "requirement_received_date": pos.requirement_received_date.isoformat() if pos.requirement_received_date else None,
         "start_date": pos.start_date.isoformat() if pos.start_date else None,
         "end_date": pos.end_date.isoformat() if pos.end_date else None,
     }
@@ -429,7 +432,8 @@ def create_jd(req: PositionCreateRequest, db: Session, user: User, source: str =
         no_of_positions=req.no_of_positions,
         client_name=req.client_name, demand_owner=req.demand_owner, current_status=req.current_status,
         experience_years=req.experience_years,
-        experience_max_years=req.experience_max_years, start_date=req.start_date, end_date=req.end_date,
+        relevant_experience_years=req.relevant_experience_years,
+        requirement_received_date=req.requirement_received_date, start_date=req.start_date, end_date=req.end_date,
     )
     if req.demand_id:
         pos.demand_id = _checked_demand_id(req.demand_id)
@@ -482,18 +486,18 @@ def _touch(pos: Position, user: Optional[User]) -> None:
 def _apply_status(db: Session, pos: Position, status: str, reason: Optional[str], candidate_ids: Optional[List[str]]) -> bool:
     """Set the status together with the data it needs; True if anything changed.
 
-    Cancelled needs a reason; Mapped and Fulfilled need at least one existing resume. A status
-    that is kept (e.g. Mapped -> Fulfilled) reuses what is already stored when nothing new is sent.
+    Non-Active / On Hold need a reason; Filled needs at least one existing resume. A status
+    that is kept reuses what is already stored when nothing new is sent.
     Moving to any other status clears the companion data, so a reason or resume list never outlives its status.
     """
     current = _snapshot(pos)["status"]
     if status == current and not reason and candidate_ids is None:
         return False  # same status, nothing new sent: leave what is stored (older rows may have no reason / resumes)
     new_reason, new_ids = None, None
-    if status == "Cancelled":
-        new_reason = (reason or "").strip() or (pos.cancellation_reason if current == "Cancelled" else None)
+    if status in REASON_REQUIRED_JD_STATUSES:
+        new_reason = (reason or "").strip() or (pos.cancellation_reason if current == status else None)
         if not new_reason:
-            raise HTTPException(422, "A cancellation reason is required.")
+            raise HTTPException(422, f"A reason is required for {status} demands.")
     elif status in RESUME_LINKED_JD_STATUSES:
         if candidate_ids is not None:
             ids = list(dict.fromkeys(candidate_ids))
@@ -545,14 +549,14 @@ def update_jd(jd_id: str, req: PositionUpdateRequest, db: Session, user: Optiona
         if value != getattr(pos, field):
             setattr(pos, field, value)
             changed = True
-    if pos.experience_years is not None and pos.experience_max_years is not None and pos.experience_max_years < pos.experience_years:
+    if pos.experience_years is not None and pos.relevant_experience_years is not None and pos.relevant_experience_years > pos.experience_years:
         db.rollback()
-        raise HTTPException(422, "Max experience cannot be less than min experience.")
+        raise HTTPException(422, "Relevant experience cannot be greater than total experience.")
     if req.status is not None and _apply_status(db, pos, req.status, req.cancellation_reason, req.candidate_ids):
         changed = True
     if pos.start_date and pos.end_date and pos.end_date < pos.start_date:
         db.rollback()
-        raise HTTPException(422, "End date cannot be before start date.")
+        raise HTTPException(422, "Project end date cannot be before project start date.")
     if req.demand_id and req.demand_id != pos.demand_id:
         pos.demand_id = _checked_demand_id(req.demand_id)  # the recruiter's choice; content edits never move a demand
         changed = True

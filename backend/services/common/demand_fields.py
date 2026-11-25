@@ -4,7 +4,7 @@ Mirrors frontend/src/components/requirements/RequirementEditor.jsx (field order,
 validates with the same pydantic schema the demand API uses (`JDDetails` / `PositionCreateRequest`), so the chat
 assistant can never accept a value the New Demand page or the API would reject.
 
-The form's Demand Status field is not offered in chat: a new demand starts as Open, and the other statuses need
+The form's Demand Status field is not offered in chat: a new demand starts as Active, and the other statuses need
 a cancellation reason or linked resumes, which are set on the requirement itself.
 """
 
@@ -29,16 +29,18 @@ FIELDS: List[Dict[str, Any]] = [
     {"key": "demand_id", "label": "Demand Practice", "type": "select", "required": True, "prompt": "Select the Demand Practice."},
     {"key": "client_name", "label": "Client Name", "type": "select_or_text", "required": False,
      "prompt": "Select the Client Name, or type a different client.", "max": MAX_DETAIL_CHARS},
-    {"key": "experience_years", "label": "Min Experience (years)", "type": "number", "required": False,
-     "prompt": "What is the minimum experience, in years?", "min": 0, "max": MAX_EXPERIENCE_YEARS, "step": 0.5},
-    {"key": "experience_max_years", "label": "Max Experience (years)", "type": "number", "required": False,
-     "prompt": "What is the maximum experience, in years?", "min": 0, "max": MAX_EXPERIENCE_YEARS, "step": 0.5},
+    {"key": "experience_years", "label": "Total Experience (years)", "type": "number", "required": False,
+     "prompt": "What is the total experience required, in years?", "min": 0, "max": MAX_EXPERIENCE_YEARS, "step": 0.5},
+    {"key": "relevant_experience_years", "label": "Relevant Experience (years)", "type": "number", "required": False,
+     "prompt": "What is the relevant experience required, in years?", "min": 0, "max": MAX_EXPERIENCE_YEARS, "step": 0.5},
     {"key": "locations", "label": "Locations", "type": "tags", "required": False,
      "prompt": f"Which locations apply? Add up to {MAX_LOCATIONS}, separated by commas.", "max": MAX_LOCATIONS},
     {"key": "no_of_positions", "label": "No. of Positions", "type": "number", "required": False, "default": 1,
      "prompt": "How many positions are you hiring for?", "min": 0, "max": MAX_POSITIONS, "step": 1},
-    {"key": "start_date", "label": "Start Date", "type": "date", "required": False, "prompt": "What is the start date?"},
-    {"key": "end_date", "label": "End Date (tentative)", "type": "date", "required": False, "prompt": "What is the tentative end date?"},
+    {"key": "requirement_received_date", "label": "Requirement Received Date", "type": "date", "required": False,
+     "prompt": "When was the requirement received?"},
+    {"key": "start_date", "label": "Project Start Date", "type": "date", "required": False, "prompt": "What is the project start date?"},
+    {"key": "end_date", "label": "Project End Date", "type": "date", "required": False, "prompt": "What is the project end date?"},
     {"key": "jd_text", "label": "Specification", "type": "textarea", "required": True,
      "prompt": "Paste or type the demand specification.", "max": MAX_TEXT_CHARS},
 ]
@@ -130,8 +132,8 @@ def _check_details(values: Dict[str, Any]) -> Dict[str, str]:
                 errors.setdefault(loc[0], msg)
             elif "end_date" in msg.lower():
                 errors.setdefault("end_date", msg)
-            elif "max experience" in msg.lower():
-                errors.setdefault("experience_max_years", msg)
+            elif "relevant experience" in msg.lower():
+                errors.setdefault("relevant_experience_years", msg)
             else:
                 errors.setdefault("title", msg)
         return errors
@@ -204,9 +206,9 @@ def display(key: str, value: Any, db: Session) -> str:
         return next((o["label"] for o in practice_options(db) if o["value"] == value), str(value))
     if key == "locations":
         return ", ".join(value)
-    if key in ("experience_years", "experience_max_years"):
+    if key in ("experience_years", "relevant_experience_years"):
         return f"{value:g} yrs" if isinstance(value, (int, float)) else str(value)
-    if key in ("start_date", "end_date"):
+    if key in ("requirement_received_date", "start_date", "end_date"):
         try:
             return date.fromisoformat(str(value)).strftime("%d %b %Y")
         except ValueError:

@@ -1,7 +1,6 @@
 import json
 import logging
 import re
-from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
@@ -12,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from backend.auth import get_current_user
 from backend.database import SessionLocal, get_db
-from backend.models import INACTIVE_JD_STATUSES, LEGACY_JD_STATUS_ALIASES, Candidate, Conversation, ConversationMessage, Position, User
+from backend.models import DEFAULT_JD_STATUS, INACTIVE_JD_STATUSES, LEGACY_JD_STATUS_ALIASES, Candidate, Conversation, ConversationMessage, Position, User
 from backend.routers import assistant_demand
 from backend.services.common.demand_fields import parse_lenient_date
 from backend.services.candidates.directory import filter_directory
@@ -168,7 +167,7 @@ def _open_positions_action(db: Session, message: str) -> Optional[tuple]:
         return f"I couldn't find a saved demand matching “{scope}”.", {"action": "open_positions", "total": 0, "requirements": []}
 
     def status(p):
-        raw = p.status or "Open"
+        raw = p.status or DEFAULT_JD_STATUS
         return LEGACY_JD_STATUS_ALIASES.get(raw, raw)
 
     rows = [{"id": p.id, "display_id": p.display_id, "title": p.title, "client_name": p.client_name,
@@ -353,20 +352,23 @@ def _jd_field_report(title: str, text: str) -> dict:
     
     # Date extraction: labeled dates + date ranges
     range_start, range_end = _extract_date_range(text)
-    start_label_pattern = r"start(?:ing)?(?:\s+date)?|target\s+start(?:\s+date)?|expected\s+start(?:\s+date)?|project\s+start(?:\s+date)?|tenative\s+start(?:\s+date)?|tentative\s+start(?:\s+date)?|joining(?:\s+date)?|commencement(?:\s+date)?|onboarding(?:\s+date)?|start\s*[:\-]"
-    end_label_pattern = r"(?:tentative\s+|tenative\s+|target\s+|expected\s+|contract\s+|assignment\s+|project\s+)?end(?:\s+date)?|completion(?:\s+date)?|target\s+completion|tenative\s+end|contract\s+end|assignment\s+end|end\s*[:\-]"
+    received_label_pattern = r"(?:requirement\s+|req\.?\s*)?received(?:\s+date)?|received\s+on"
+    start_label_pattern = r"(?:project\s+)?start(?:ing)?(?:\s+date)?|target\s+start(?:\s+date)?|expected\s+start(?:\s+date)?|project\s+start(?:\s+date)?|tenative\s+start(?:\s+date)?|tentative\s+start(?:\s+date)?|joining(?:\s+date)?|commencement(?:\s+date)?|onboarding(?:\s+date)?|start\s*[:\-]"
+    end_label_pattern = r"(?:project\s+|tentative\s+|tenative\s+|target\s+|expected\s+|contract\s+|assignment\s+)?end(?:\s+date)?|completion(?:\s+date)?|target\s+completion|tenative\s+end|contract\s+end|assignment\s+end|end\s*[:\-]"
+    heur_received_date = _extract_labeled_date(text, received_label_pattern)
     heur_start_date = _extract_labeled_date(text, start_label_pattern) or range_start
     heur_end_date = _extract_labeled_date(text, end_label_pattern) or range_end
 
     # Merge semantic and heuristic
+    received_date = sem.get("requirement_received_date") or heur_received_date
     start_date = sem.get("start_date") or heur_start_date
     end_date = sem.get("end_date") or heur_end_date
     client_name = sem.get("client_name") or (stated_client.group(1).strip() if stated_client else None)
     stated_role = sem.get("role") or (filters.get("role") if (filters.get("sources") or {}).get("role") == "jd_text" else None) or (title if title else None)
     position_count = sem.get("no_of_positions") or stated_count
     
-    exp_min = sem.get("experience_years") if sem.get("experience_years") is not None else (float(exp_range.group(1)) if exp_range else (min(exp) if exp else None))
-    exp_max = sem.get("experience_max_years") if sem.get("experience_max_years") is not None else (float(exp_range.group(2)) if exp_range else None)
+    exp_total = sem.get("experience_years") if sem.get("experience_years") is not None else (float(exp_range.group(2)) if exp_range else (max(exp) if exp else None))
+    exp_relevant = sem.get("relevant_experience_years") if sem.get("relevant_experience_years") is not None else (float(exp_range.group(1)) if exp_range else None)
     
     locations = sem.get("locations") or ([part.strip() for part in re.split(r"[,;|]", filters.get("location") or "") if part.strip()] or None)
     location_str = ", ".join(locations) if locations else filters.get("location")
@@ -389,13 +391,14 @@ def _jd_field_report(title: str, text: str) -> dict:
         "Job title": stated_role,
         "Client": client_name,
         "Location": location_str,
-        "Experience": (f"{exp_min:g}-{exp_max:g} years" if exp_min is not None and exp_max is not None else f"{exp_min:g}+ years" if exp_min is not None else None),
-        "Maximum experience": exp_max,
+        "Total experience": (f"{exp_total:g} years" if exp_total is not None else None),
+        "Relevant experience": (f"{exp_relevant:g} years" if exp_relevant is not None else None),
         "Work mode": work_mode,
         "Number of positions": position_count,
         "Skills / qualifications": ", ".join(skill_lines) if skill_lines else None,
-        "Start date": start_date,
-        "End date": end_date,
+        "Requirement received date": received_date,
+        "Project start date": start_date,
+        "Project end date": end_date,
     }
     present = [{"name": name, "value": str(value)} for name, value in fields.items() if value not in (None, "")]
     missing = [name for name, value in fields.items() if value in (None, "")]
@@ -405,10 +408,11 @@ def _jd_field_report(title: str, text: str) -> dict:
         "client_name": client_name,
         "location": location_str,
         "locations": locations or [],
-        "experience_years": exp_min,
-        "experience_max_years": exp_max,
+        "experience_years": exp_total,
+        "relevant_experience_years": exp_relevant,
         "position_count": position_count,
         "work_mode": work_mode,
+        "requirement_received_date": received_date,
         "start_date": start_date,
         "end_date": end_date,
     }
@@ -445,8 +449,12 @@ def _field_report_for_request(db: Session, conversation: Conversation, request: 
             "Job title": position.role,
             "Client": position.client_name,
             "Location": position.location,
-            "Experience": (f"{position.experience_years:g}+ years" if position.experience_years is not None else None),
+            "Total experience": (f"{position.experience_years:g} years" if position.experience_years is not None else None),
+            "Relevant experience": (f"{position.relevant_experience_years:g} years" if position.relevant_experience_years is not None else None),
             "Number of positions": position.no_of_positions,
+            "Requirement received date": position.requirement_received_date.isoformat() if position.requirement_received_date else None,
+            "Project start date": position.start_date.isoformat() if position.start_date else None,
+            "Project end date": position.end_date.isoformat() if position.end_date else None,
         }
         _merge_report_values(report, explicit)
         ref = {"id": position.id, "display_id": position.display_id, "title": position.title}
@@ -609,8 +617,9 @@ def _route_message(db: Session, request: AssistantMessageRequest, user: User, co
 
     candidate_intent = bool(re.search(r"\b(find|search|show|match|recommend|rank)\b.{0,100}\bcandidates?\b", lower))
     if candidate_intent:
+        inactive = tuple(INACTIVE_JD_STATUSES) + tuple(k for k, v in LEGACY_JD_STATUS_ALIASES.items() if v in INACTIVE_JD_STATUSES)
         positions = db.query(Position).filter(Position.client_name.isnot(None),
-                         Position.status.is_(None) | (Position.status != "Cancelled")).all()
+                         func.coalesce(Position.status, DEFAULT_JD_STATUS).notin_(inactive)).all()
         clients = sorted({(p.client_name or "").strip() for p in positions if (p.client_name or "").strip()}, key=len, reverse=True)
         client_name = next((name for name in clients if name.casefold() in lower), None)
         if client_name:

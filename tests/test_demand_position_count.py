@@ -20,15 +20,15 @@ def test_practice_position_count_sums_positions_of_live_demands_only():
     headers = {"Authorization": f"Bearer {create_access_token({'sub': user.id})}"}
     before = _practice(headers)
     tag = uuid.uuid4().hex[:8]
-    rows = [(3, "Open"), (2, None), (5, "Cancelled"), (None, "Open"), (0, "Open"), (4, "Fulfilled")]
+    rows = [(3, "Active"), (2, None), (5, "Non-Active"), (None, "Active"), (0, "On Hold"), (4, "Filled")]
     made = [Position(title=f"PC {tag} {i}", jd_text="x", created_by=user.id, demand_id=canonical_demand_id("Others"), no_of_positions=n, status=s)
             for i, (n, s) in enumerate(rows)]
     try:
         db.add_all(made)
         db.commit()
         after = _practice(headers)
-        assert after["position_count"] - before["position_count"] == 3 + 2 + 4  # cancelled, blank and zero add nothing
-        assert after["jd_count"] - before["jd_count"] == 5  # every live demand, cancelled left out
+        assert after["position_count"] - before["position_count"] == 3 + 2 + 4  # non-active, blank and zero add nothing
+        assert after["jd_count"] - before["jd_count"] == 5  # every live demand, non-active left out
     finally:
         db.query(Position).filter(Position.id.in_([p.id for p in made])).delete(synchronize_session=False)
         db.commit()
